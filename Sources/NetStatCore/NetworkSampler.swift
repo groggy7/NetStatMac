@@ -105,8 +105,6 @@ public final class NetworkSampler {
     }
 
     private static func systemSnapshot(interfaceMode: InterfaceMode) -> NetworkSnapshot? {
-        var interfaces: UnsafeMutablePointer<ifaddrs>?
-        var countersByInterface: [String: NetworkInterfaceCounters] = [:]
         let primaryNames = primaryInterfaceNames()
         let hardwareNames = hardwareInterfaceNames()
         let selectedNames = selectedInterfaceNames(
@@ -115,28 +113,8 @@ public final class NetworkSampler {
             hardwareInterfaceNames: hardwareNames
         )
 
-        guard getifaddrs(&interfaces) == 0 else {
+        guard let countersByInterface = interfaceCounters(selectedNames: selectedNames) else {
             return nil
-        }
-
-        if let interfaces {
-            defer { freeifaddrs(interfaces) }
-            var cursor: UnsafeMutablePointer<ifaddrs>? = interfaces
-
-            while let current = cursor {
-                guard shouldCount(current.pointee, selectedNames: selectedNames) else {
-                    cursor = current.pointee.ifa_next
-                    continue
-                }
-
-                let name = String(cString: current.pointee.ifa_name)
-                let data = current.pointee.ifa_data.assumingMemoryBound(to: if_data.self).pointee
-                countersByInterface[name] = NetworkInterfaceCounters(
-                    receivedBytes: UInt64(data.ifi_ibytes),
-                    sentBytes: UInt64(data.ifi_obytes)
-                )
-                cursor = current.pointee.ifa_next
-            }
         }
 
         return NetworkSnapshot(
@@ -198,23 +176,76 @@ public final class NetworkSampler {
         })
     }
 
-    private static func shouldCount(_ interface: ifaddrs, selectedNames: Set<String>) -> Bool {
-        guard let address = interface.ifa_addr,
-              interface.ifa_data != nil,
-              address.pointee.sa_family == UInt8(AF_LINK) else {
-            return false
+    private static func interfaceCounters(
+        selectedNames: Set<String>
+    ) -> [String: NetworkInterfaceCounters]? {
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
+        var bufferSize = 0
+
+        let sizeResult = mib.withUnsafeMutableBufferPointer { pointer in
+            sysctl(pointer.baseAddress, UInt32(pointer.count), nil, &bufferSize, nil, 0)
+        }
+        guard sizeResult == 0 else { return nil }
+        guard bufferSize > 0 else { return [:] }
+
+        let buffer = UnsafeMutableRawPointer.allocate(
+            byteCount: bufferSize,
+            alignment: MemoryLayout<if_msghdr2>.alignment
+        )
+        defer { buffer.deallocate() }
+
+        var actualSize = bufferSize
+        let dataResult = mib.withUnsafeMutableBufferPointer { pointer in
+            sysctl(pointer.baseAddress, UInt32(pointer.count), buffer, &actualSize, nil, 0)
+        }
+        guard dataResult == 0 else { return nil }
+
+        var countersByInterface: [String: NetworkInterfaceCounters] = [:]
+        var offset = 0
+
+        while offset < actualSize {
+            guard actualSize - offset >= MemoryLayout<if_msghdr>.size else {
+                return nil
+            }
+
+            let messagePointer = buffer.advanced(by: offset)
+            let header = messagePointer.assumingMemoryBound(to: if_msghdr.self).pointee
+            let messageLength = Int(header.ifm_msglen)
+
+            guard messageLength > 0, offset + messageLength <= actualSize else {
+                return nil
+            }
+
+            if header.ifm_type == UInt8(RTM_IFINFO2) {
+                guard messageLength >= MemoryLayout<if_msghdr2>.size else {
+                    return nil
+                }
+
+                let message = messagePointer.assumingMemoryBound(to: if_msghdr2.self).pointee
+                var nameBuffer = [CChar](repeating: 0, count: Int(IFNAMSIZ))
+                let resolvedName = nameBuffer.withUnsafeMutableBufferPointer { pointer in
+                    if_indextoname(UInt32(message.ifm_index), pointer.baseAddress)
+                }
+
+                if let resolvedName {
+                    let name = String(cString: resolvedName)
+                    let flags = Int32(message.ifm_flags)
+                    let isActive = (flags & IFF_UP) != 0
+                        && (flags & IFF_RUNNING) != 0
+                        && (flags & IFF_LOOPBACK) == 0
+
+                    if isActive && selectedNames.contains(name) {
+                        countersByInterface[name] = NetworkInterfaceCounters(
+                            receivedBytes: message.ifm_data.ifi_ibytes,
+                            sentBytes: message.ifm_data.ifi_obytes
+                        )
+                    }
+                }
+            }
+
+            offset += messageLength
         }
 
-        let name = String(cString: interface.ifa_name)
-        let flags = Int32(interface.ifa_flags)
-        let isActive = (flags & IFF_UP) != 0
-            && (flags & IFF_RUNNING) != 0
-            && (flags & IFF_LOOPBACK) == 0
-
-        guard isActive else {
-            return false
-        }
-
-        return selectedNames.contains(name)
+        return countersByInterface
     }
 }

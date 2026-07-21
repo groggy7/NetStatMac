@@ -104,6 +104,25 @@ final class NetworkSamplerTests: XCTestCase {
         XCTAssertEqual(rate.upBytesPerSecond, 200, accuracy: 0.000_001)
     }
 
+    func testCountersContinueAcrossLegacy32BitBoundary() {
+        let legacyMaximum = UInt64(UInt32.max)
+        let sampler = makeSampler([
+            snapshot(
+                ["en0": (received: legacyMaximum - 50, sent: legacyMaximum - 100)],
+                at: 1
+            ),
+            snapshot(
+                ["en0": (received: legacyMaximum + 150, sent: legacyMaximum + 300)],
+                at: 2
+            )
+        ])
+
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
+        let rate = sampler.sampleRate(interfaceMode: .automatic)
+        XCTAssertEqual(rate.downBytesPerSecond, 200, accuracy: 0.000_001)
+        XCTAssertEqual(rate.upBytesPerSecond, 400, accuracy: 0.000_001)
+    }
+
     func testInvalidElapsedTimeProducesNeutralSample() {
         let sampler = makeSampler([
             snapshot(["en0": (received: 100, sent: 200)], at: 1),
