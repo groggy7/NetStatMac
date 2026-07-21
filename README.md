@@ -1,49 +1,58 @@
 # NetStatBar
 
-A tiny native macOS menu bar app that shows current download and upload speed.
+NetStatBar is a small native macOS menu bar app that shows the current download and upload rate. It is built with Swift and AppKit, has no third-party dependencies, and runs without a Dock icon.
 
-## Customization
+## Features
 
-Click the menu bar item to change:
+Click the menu bar readout to configure:
 
-- Update interval: 0.5, 1, 2, or 5 seconds.
-- Display style: arrows, labels, compact, download only, or upload only.
-- Units: bytes per second or bits per second.
-- Scale: binary units (`KiB/MiB`) or decimal units (`KB/MB`).
-- Interfaces: built-in `en*` network interfaces or all active non-loopback interfaces.
-- Number display: rounded zero-unit values or one decimal place.
+- **Update interval:** 0.5, 1, 2, or 5 seconds.
+- **Display style:** arrows, labels, compact, download only, or upload only.
+- **Item width:** automatic sizing, four presets, or a custom width from 60 to 250 points. Narrow dual-rate layouts automatically show download only.
+- **Font size:** 10, 12, or 14 point presets, or a custom size from 9 to 18 points.
+- **Units:** bytes per second (`KB/s`, `MB/s`, and so on) or bits per second (`Kb/s`, `Mb/s`, and so on). Units use decimal multiples.
+- **Interfaces:** active `en*` interfaces or all active non-loopback interfaces.
+
+Settings are saved in macOS user defaults and restored the next time the app starts. The menu also includes a reset-to-defaults action.
+
+## How it works
+
+At each update, NetStatBar reads the cumulative byte counters exposed by macOS for the selected network interfaces. It subtracts the previous counters and divides the difference by the actual elapsed time to calculate the current transfer rate.
+
+The default interface mode includes active interfaces whose names begin with `en`, which normally covers a Mac's Wi-Fi, built-in Ethernet, and common Ethernet adapters while excluding loopback and most virtual interfaces. **All Active Interfaces** also includes VPN and other virtual interfaces, so tunneled traffic may be counted at more than one layer.
+
+NetStatBar only reads interface-level byte totals. It does not inspect network contents, make network requests, require root access, or collect telemetry.
+
+## Requirements
+
+- macOS 14 or later.
+- Xcode command-line tools with Swift 6 or later to build from source.
 
 ## Build
 
-```sh
-chmod +x Scripts/build-app.sh
-Scripts/build-app.sh
-```
-
-The app bundle is created at:
-
-```text
-build/NetStatBar.app
-```
-
-Open it from Finder or run:
+Compile a release executable with Swift Package Manager:
 
 ```sh
-open build/NetStatBar.app
+swift build -c release
 ```
 
-## Install
+The executable is created at `.build/release/NetStatBar`. Use the installer below to create and install a standard `.app` bundle.
 
-To install it into `/Applications` and configure it to start when you log in:
+## Install and start at login
+
+Run the included installer:
 
 ```sh
-chmod +x Scripts/install-app.sh
-Scripts/install-app.sh
+./install.sh
 ```
 
-## Notes
+The installer:
 
-- Native Swift/AppKit only. No Electron, no background web runtime.
-- Samples macOS interface byte counters at the selected interval.
-- Defaults to active `en*` interfaces, which covers built-in Wi-Fi and most Ethernet adapters on MacBooks while avoiding loopback and common virtual interfaces.
-- Runs as a menu bar accessory app with no Dock icon.
+1. Builds a release executable.
+2. Creates and copies `NetStatBar.app` to `/Applications`.
+3. Registers `~/Library/LaunchAgents/com.local.netstatbar.plist` so the app opens when you log in.
+4. Starts the installed app.
+
+If an existing copy is installed in `/Applications` and is not writable by the current user, the installer asks for administrator privileges to replace it. Rerun the same command to install a newer local build.
+
+The release executable is ad-hoc signed by the Swift toolchain. The installer does not perform distribution signing or notarization, so it is intended for personal installation rather than redistribution.
