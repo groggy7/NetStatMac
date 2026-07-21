@@ -11,11 +11,17 @@ let package = Package(
         .executable(name: "NetStatBar", targets: ["NetStatBar"])
     ],
     targets: [
+        .target(name: "NetStatCore"),
         .executableTarget(
             name: "NetStatBar",
+            dependencies: ["NetStatCore"],
             linkerSettings: [
                 .linkedFramework("AppKit")
             ]
+        ),
+        .testTarget(
+            name: "NetStatCoreTests",
+            dependencies: ["NetStatCore"]
         )
     ]
 )

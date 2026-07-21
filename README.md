@@ -38,6 +38,16 @@ swift build -c release
 
 The executable is created at `.build/release/NetStatBar`. Use the installer below to create and install a standard `.app` bundle.
 
+## Test
+
+Run the non-UI unit tests with Swift Package Manager:
+
+```sh
+swift test
+```
+
+The tests cover rate calculation, invalid samples, interface and counter changes, unit conversion, and display formatting. AppKit menu interactions are not included.
+
 ## Install and start at login
 
 Run the included installer:

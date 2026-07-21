@@ -1,36 +1,5 @@
 import AppKit
-import Darwin
-
-struct NetworkSnapshot {
-    let countersByInterface: [String: NetworkInterfaceCounters]
-    let timestamp: TimeInterval
-}
-
-struct NetworkInterfaceCounters {
-    let receivedBytes: UInt64
-    let sentBytes: UInt64
-}
-
-struct NetworkRate {
-    let downBytesPerSecond: Double
-    let upBytesPerSecond: Double
-
-    static let zero = NetworkRate(downBytesPerSecond: 0, upBytesPerSecond: 0)
-}
-
-enum InterfaceMode: String, CaseIterable {
-    case builtIn = "builtIn"
-    case allActive = "allActive"
-
-    var title: String {
-        switch self {
-        case .builtIn:
-            return "Built-in Wi-Fi/Ethernet"
-        case .allActive:
-            return "All Active Interfaces"
-        }
-    }
-}
+import NetStatCore
 
 enum DisplayStyle: String, CaseIterable {
     case arrows = "arrows"
@@ -51,20 +20,6 @@ enum DisplayStyle: String, CaseIterable {
             return "Download Only"
         case .uploadOnly:
             return "Upload Only"
-        }
-    }
-}
-
-enum UnitMode: String, CaseIterable {
-    case bytes = "bytes"
-    case bits = "bits"
-
-    var title: String {
-        switch self {
-        case .bytes:
-            return "Bytes/s"
-        case .bits:
-            return "Bits/s"
         }
     }
 }
@@ -152,120 +107,6 @@ struct AppSettings {
             customItemWidth,
             fontSize
         ]
-    }
-}
-
-final class NetworkSampler {
-    private var previousSnapshot: NetworkSnapshot?
-
-    func sampleRate(interfaceMode: InterfaceMode) -> NetworkRate {
-        guard let current = snapshot(interfaceMode: interfaceMode) else {
-            previousSnapshot = nil
-            return .zero
-        }
-
-        defer { previousSnapshot = current }
-
-        guard let previousSnapshot,
-              current.timestamp > previousSnapshot.timestamp,
-              current.countersByInterface.count == previousSnapshot.countersByInterface.count else {
-            return .zero
-        }
-
-        var downDelta: UInt64 = 0
-        var upDelta: UInt64 = 0
-
-        for (name, currentCounters) in current.countersByInterface {
-            guard let previousCounters = previousSnapshot.countersByInterface[name],
-                  currentCounters.receivedBytes >= previousCounters.receivedBytes,
-                  currentCounters.sentBytes >= previousCounters.sentBytes else {
-                return .zero
-            }
-
-            let (nextDownDelta, downOverflow) = downDelta.addingReportingOverflow(
-                currentCounters.receivedBytes - previousCounters.receivedBytes
-            )
-            let (nextUpDelta, upOverflow) = upDelta.addingReportingOverflow(
-                currentCounters.sentBytes - previousCounters.sentBytes
-            )
-
-            guard !downOverflow, !upOverflow else {
-                return .zero
-            }
-
-            downDelta = nextDownDelta
-            upDelta = nextUpDelta
-        }
-
-        let elapsed = current.timestamp - previousSnapshot.timestamp
-
-        return NetworkRate(
-            downBytesPerSecond: Double(downDelta) / elapsed,
-            upBytesPerSecond: Double(upDelta) / elapsed
-        )
-    }
-
-    func reset() {
-        previousSnapshot = nil
-    }
-
-    private func snapshot(interfaceMode: InterfaceMode) -> NetworkSnapshot? {
-        var interfaces: UnsafeMutablePointer<ifaddrs>?
-        var countersByInterface: [String: NetworkInterfaceCounters] = [:]
-
-        guard getifaddrs(&interfaces) == 0 else {
-            return nil
-        }
-
-        if let interfaces {
-            defer { freeifaddrs(interfaces) }
-            var cursor: UnsafeMutablePointer<ifaddrs>? = interfaces
-
-            while let current = cursor {
-                guard shouldCount(current.pointee, interfaceMode: interfaceMode) else {
-                    cursor = current.pointee.ifa_next
-                    continue
-                }
-
-                let name = String(cString: current.pointee.ifa_name)
-                let data = current.pointee.ifa_data.assumingMemoryBound(to: if_data.self).pointee
-                countersByInterface[name] = NetworkInterfaceCounters(
-                    receivedBytes: UInt64(data.ifi_ibytes),
-                    sentBytes: UInt64(data.ifi_obytes)
-                )
-                cursor = current.pointee.ifa_next
-            }
-        }
-
-        return NetworkSnapshot(
-            countersByInterface: countersByInterface,
-            timestamp: ProcessInfo.processInfo.systemUptime
-        )
-    }
-
-    private func shouldCount(_ interface: ifaddrs, interfaceMode: InterfaceMode) -> Bool {
-        guard let address = interface.ifa_addr,
-              interface.ifa_data != nil,
-              address.pointee.sa_family == UInt8(AF_LINK) else {
-            return false
-        }
-
-        let name = String(cString: interface.ifa_name)
-        let flags = Int32(interface.ifa_flags)
-        let isActive = (flags & IFF_UP) != 0
-            && (flags & IFF_RUNNING) != 0
-            && (flags & IFF_LOOPBACK) == 0
-
-        guard isActive else {
-            return false
-        }
-
-        switch interfaceMode {
-        case .builtIn:
-            return name.hasPrefix("en")
-        case .allActive:
-            return true
-        }
     }
 }
 
@@ -791,50 +632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func format(_ bytesPerSecond: Double) -> String {
-        let multiplier = settings.unitMode == .bits ? 8.0 : 1.0
-        let base = 1000.0
-        let units = unitsForCurrentSettings()
-
-        var value = (bytesPerSecond * multiplier) / base
-        var unitIndex = 0
-
-        // Never exceed 99 in current unit; transition to next unit (0.1 MB/s, 0.1 GB/s, etc.) at >= 100
-        while value >= 100.0, unitIndex < units.count - 1 {
-            value /= base
-            unitIndex += 1
-        }
-
-        let formattedNumber: String
-        if value == 0 {
-            formattedNumber = "0"
-        } else if unitIndex == 0 {
-            // For Kilo units (0 to 99): integer format
-            formattedNumber = "\(Int(value.rounded()))"
-        } else {
-            // For Mega, Giga, Tera units
-            if value < 10.0 {
-                let formatted = String(format: "%.1f", value)
-                if formatted == "10.0" || formatted.hasSuffix(".0") {
-                    formattedNumber = "\(Int(value.rounded()))"
-                } else {
-                    formattedNumber = formatted
-                }
-            } else {
-                formattedNumber = "\(Int(value.rounded()))"
-            }
-        }
-
-        let paddedNumber = String(repeating: " ", count: max(0, 3 - formattedNumber.count)) + formattedNumber
-        return "\(paddedNumber) \(units[unitIndex])"
-    }
-
-    private func unitsForCurrentSettings() -> [String] {
-        switch settings.unitMode {
-        case .bytes:
-            return ["KB/s", "MB/s", "GB/s", "TB/s"]
-        case .bits:
-            return ["Kb/s", "Mb/s", "Gb/s", "Tb/s"]
-        }
+        RateFormatter.string(fromBytesPerSecond: bytesPerSecond, unitMode: settings.unitMode)
     }
 }
 
