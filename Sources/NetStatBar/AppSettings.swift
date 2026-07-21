@@ -40,7 +40,7 @@ struct AppSettings {
         updateInterval: 1,
         displayStyle: .arrows,
         unitMode: .bytes,
-        interfaceMode: .builtIn,
+        interfaceMode: .automatic,
         customItemWidth: 0,
         fontSize: 12
     )

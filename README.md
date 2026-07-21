@@ -11,7 +11,7 @@ Click the menu bar readout to configure:
 - **Item width:** automatic sizing, four presets, or a custom width from 60 to 250 points. Narrow dual-rate layouts automatically show download only.
 - **Font size:** 10, 12, or 14 point presets, or a custom size from 9 to 18 points.
 - **Units:** bytes per second (`KB/s`, `MB/s`, and so on) or bits per second (`Kb/s`, `Mb/s`, and so on). Units use decimal multiples.
-- **Interfaces:** active `en*` interfaces or all active non-loopback interfaces.
+- **Interfaces:** automatic primary-route selection or all active hardware interfaces.
 
 Settings are saved in macOS user defaults and restored the next time the app starts. The menu also includes a reset-to-defaults action.
 
@@ -19,7 +19,7 @@ Settings are saved in macOS user defaults and restored the next time the app sta
 
 At each update, NetStatBar reads the cumulative byte counters exposed by macOS for the selected network interfaces. It subtracts the previous counters and divides the difference by the actual elapsed time to calculate the current transfer rate.
 
-The default interface mode includes active interfaces whose names begin with `en`, which normally covers a Mac's Wi-Fi, built-in Ethernet, and common Ethernet adapters while excluding loopback and most virtual interfaces. **All Active Interfaces** also includes VPN and other virtual interfaces, so tunneled traffic may be counted at more than one layer.
+The default **Automatic** mode follows macOS's primary IPv4 and IPv6 routes instead of guessing from interface names. When a VPN route and its underlying hardware are both primary, NetStatBar counts the VPN layer only. **All Active Hardware** uses macOS's hardware-interface classifications, so unusual adapters are included while VPN tunnels and other virtual interfaces are excluded.
 
 NetStatBar only reads interface-level byte totals. It does not inspect network contents, make network requests, require root access, or collect telemetry.
 

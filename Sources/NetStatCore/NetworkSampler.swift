@@ -1,16 +1,18 @@
 import Darwin
 import Foundation
+import SystemConfiguration
 
 public enum InterfaceMode: String, CaseIterable, Sendable {
-    case builtIn = "builtIn"
-    case allActive = "allActive"
+    // Preserve the old raw values so existing saved preferences migrate automatically.
+    case automatic = "builtIn"
+    case allHardware = "allActive"
 
     public var title: String {
         switch self {
-        case .builtIn:
-            return "Built-in Wi-Fi/Ethernet"
-        case .allActive:
-            return "All Active Interfaces"
+        case .automatic:
+            return "Automatic (Primary Route)"
+        case .allHardware:
+            return "All Active Hardware"
         }
     }
 }
@@ -105,6 +107,13 @@ public final class NetworkSampler {
     private static func systemSnapshot(interfaceMode: InterfaceMode) -> NetworkSnapshot? {
         var interfaces: UnsafeMutablePointer<ifaddrs>?
         var countersByInterface: [String: NetworkInterfaceCounters] = [:]
+        let primaryNames = primaryInterfaceNames()
+        let hardwareNames = hardwareInterfaceNames()
+        let selectedNames = selectedInterfaceNames(
+            interfaceMode: interfaceMode,
+            primaryInterfaceNames: primaryNames,
+            hardwareInterfaceNames: hardwareNames
+        )
 
         guard getifaddrs(&interfaces) == 0 else {
             return nil
@@ -115,7 +124,7 @@ public final class NetworkSampler {
             var cursor: UnsafeMutablePointer<ifaddrs>? = interfaces
 
             while let current = cursor {
-                guard shouldCount(current.pointee, interfaceMode: interfaceMode) else {
+                guard shouldCount(current.pointee, selectedNames: selectedNames) else {
                     cursor = current.pointee.ifa_next
                     continue
                 }
@@ -136,7 +145,60 @@ public final class NetworkSampler {
         )
     }
 
-    private static func shouldCount(_ interface: ifaddrs, interfaceMode: InterfaceMode) -> Bool {
+    static func selectedInterfaceNames(
+        interfaceMode: InterfaceMode,
+        primaryInterfaceNames: Set<String>,
+        hardwareInterfaceNames: Set<String>
+    ) -> Set<String> {
+        switch interfaceMode {
+        case .automatic:
+            let layeredPrimaryNames = primaryInterfaceNames.subtracting(hardwareInterfaceNames)
+            return layeredPrimaryNames.isEmpty ? primaryInterfaceNames : layeredPrimaryNames
+        case .allHardware:
+            return hardwareInterfaceNames
+        }
+    }
+
+    private static func primaryInterfaceNames() -> Set<String> {
+        let entities = [kSCEntNetIPv4, kSCEntNetIPv6]
+        let primaryInterfaceKey = kSCDynamicStorePropNetPrimaryInterface as String
+
+        return Set(entities.compactMap { entity in
+            let key = SCDynamicStoreKeyCreateNetworkGlobalEntity(
+                nil,
+                kSCDynamicStoreDomainState,
+                entity
+            )
+            guard let state = SCDynamicStoreCopyValue(nil, key) as? [String: Any] else {
+                return nil
+            }
+
+            return state[primaryInterfaceKey] as? String
+        })
+    }
+
+    private static func hardwareInterfaceNames() -> Set<String> {
+        let hardwareTypes = Set([
+            kSCNetworkInterfaceTypeBluetooth as String,
+            kSCNetworkInterfaceTypeEthernet as String,
+            kSCNetworkInterfaceTypeFireWire as String,
+            kSCNetworkInterfaceTypeIEEE80211 as String,
+            kSCNetworkInterfaceTypeWWAN as String
+        ])
+
+        return Set((SCNetworkInterfaceCopyAll() as NSArray).compactMap { value in
+            let interface = value as! SCNetworkInterface
+            guard let type = SCNetworkInterfaceGetInterfaceType(interface) as String?,
+                  hardwareTypes.contains(type),
+                  let name = SCNetworkInterfaceGetBSDName(interface) as String? else {
+                return nil
+            }
+
+            return name
+        })
+    }
+
+    private static func shouldCount(_ interface: ifaddrs, selectedNames: Set<String>) -> Bool {
         guard let address = interface.ifa_addr,
               interface.ifa_data != nil,
               address.pointee.sa_family == UInt8(AF_LINK) else {
@@ -153,11 +215,6 @@ public final class NetworkSampler {
             return false
         }
 
-        switch interfaceMode {
-        case .builtIn:
-            return name.hasPrefix("en")
-        case .allActive:
-            return true
-        }
+        return selectedNames.contains(name)
     }
 }

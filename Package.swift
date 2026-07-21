@@ -11,7 +11,12 @@ let package = Package(
         .executable(name: "NetStatBar", targets: ["NetStatBar"])
     ],
     targets: [
-        .target(name: "NetStatCore"),
+        .target(
+            name: "NetStatCore",
+            linkerSettings: [
+                .linkedFramework("SystemConfiguration")
+            ]
+        ),
         .executableTarget(
             name: "NetStatBar",
             dependencies: ["NetStatCore"],

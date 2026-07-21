@@ -7,7 +7,7 @@ final class NetworkSamplerTests: XCTestCase {
             snapshot(["en0": (received: 1_000, sent: 2_000)], at: 1)
         ])
 
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
     }
 
     func testRateUsesCounterDeltasAndElapsedTime() {
@@ -28,9 +28,9 @@ final class NetworkSamplerTests: XCTestCase {
             )
         ])
 
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
 
-        let rate = sampler.sampleRate(interfaceMode: .builtIn)
+        let rate = sampler.sampleRate(interfaceMode: .automatic)
         XCTAssertEqual(rate.downBytesPerSecond, 400, accuracy: 0.000_001)
         XCTAssertEqual(rate.upBytesPerSecond, 600, accuracy: 0.000_001)
     }
@@ -43,11 +43,11 @@ final class NetworkSamplerTests: XCTestCase {
             snapshot(["en0": (received: 10_100, sent: 20_200)], at: 4)
         ])
 
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
 
-        let rate = sampler.sampleRate(interfaceMode: .builtIn)
+        let rate = sampler.sampleRate(interfaceMode: .automatic)
         XCTAssertEqual(rate.downBytesPerSecond, 100, accuracy: 0.000_001)
         XCTAssertEqual(rate.upBytesPerSecond, 200, accuracy: 0.000_001)
     }
@@ -71,10 +71,10 @@ final class NetworkSamplerTests: XCTestCase {
             )
         ])
 
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .allActive), .zero)
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .allActive), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .allHardware), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .allHardware), .zero)
 
-        let rate = sampler.sampleRate(interfaceMode: .allActive)
+        let rate = sampler.sampleRate(interfaceMode: .allHardware)
         XCTAssertEqual(rate.downBytesPerSecond, 400, accuracy: 0.000_001)
         XCTAssertEqual(rate.upBytesPerSecond, 600, accuracy: 0.000_001)
     }
@@ -85,8 +85,8 @@ final class NetworkSamplerTests: XCTestCase {
             snapshot(["en1": (received: 50_000, sent: 60_000)], at: 2)
         ])
 
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
     }
 
     func testCounterResetProducesNeutralSampleAndNewBaseline() {
@@ -96,10 +96,10 @@ final class NetworkSamplerTests: XCTestCase {
             snapshot(["en0": (received: 110, sent: 220)], at: 3)
         ])
 
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
 
-        let rate = sampler.sampleRate(interfaceMode: .builtIn)
+        let rate = sampler.sampleRate(interfaceMode: .automatic)
         XCTAssertEqual(rate.downBytesPerSecond, 100, accuracy: 0.000_001)
         XCTAssertEqual(rate.upBytesPerSecond, 200, accuracy: 0.000_001)
     }
@@ -110,8 +110,8 @@ final class NetworkSamplerTests: XCTestCase {
             snapshot(["en0": (received: 200, sent: 400)], at: 1)
         ])
 
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
     }
 
     func testDeltaOverflowProducesNeutralSample() {
@@ -132,8 +132,8 @@ final class NetworkSamplerTests: XCTestCase {
             )
         ])
 
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
     }
 
     func testResetDiscardsPreviousSnapshot() {
@@ -142,9 +142,58 @@ final class NetworkSamplerTests: XCTestCase {
             snapshot(["en0": (received: 200, sent: 400)], at: 2)
         ])
 
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
         sampler.reset()
-        XCTAssertEqual(sampler.sampleRate(interfaceMode: .builtIn), .zero)
+        XCTAssertEqual(sampler.sampleRate(interfaceMode: .automatic), .zero)
+    }
+
+    func testAutomaticModeIncludesUnusuallyNamedPrimaryHardware() {
+        XCTAssertEqual(
+            NetworkSampler.selectedInterfaceNames(
+                interfaceMode: .automatic,
+                primaryInterfaceNames: ["usb42"],
+                hardwareInterfaceNames: ["en0", "usb42"]
+            ),
+            ["usb42"]
+        )
+    }
+
+    func testAutomaticModePrefersVPNLayerOverUnderlyingHardware() {
+        XCTAssertEqual(
+            NetworkSampler.selectedInterfaceNames(
+                interfaceMode: .automatic,
+                primaryInterfaceNames: ["en0", "utun7"],
+                hardwareInterfaceNames: ["en0"]
+            ),
+            ["utun7"]
+        )
+    }
+
+    func testAutomaticModeKeepsDistinctHardwarePrimaries() {
+        XCTAssertEqual(
+            NetworkSampler.selectedInterfaceNames(
+                interfaceMode: .automatic,
+                primaryInterfaceNames: ["en8", "wifi42"],
+                hardwareInterfaceNames: ["en8", "wifi42"]
+            ),
+            ["en8", "wifi42"]
+        )
+    }
+
+    func testAllHardwareModeExcludesVirtualInterfaces() {
+        XCTAssertEqual(
+            NetworkSampler.selectedInterfaceNames(
+                interfaceMode: .allHardware,
+                primaryInterfaceNames: ["utun7"],
+                hardwareInterfaceNames: ["en0", "usb42"]
+            ),
+            ["en0", "usb42"]
+        )
+    }
+
+    func testLegacyInterfaceModePreferencesMapToNewModes() {
+        XCTAssertEqual(InterfaceMode(rawValue: "builtIn"), .automatic)
+        XCTAssertEqual(InterfaceMode(rawValue: "allActive"), .allHardware)
     }
 
     private func makeSampler(_ snapshots: [NetworkSnapshot?]) -> NetworkSampler {
