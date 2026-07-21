@@ -3,9 +3,9 @@ import NetStatCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    let sampler = NetworkSampler()
+    let samplingWorker = NetworkSamplingWorker()
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    var timer: Timer?
+    var samplingTask: Task<Void, Never>?
     var settings = AppSettings()
     var lastRate = NetworkRate.zero
 
@@ -16,31 +16,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        timer?.invalidate()
+        samplingTask?.cancel()
     }
 
     func startSampling() {
-        timer?.invalidate()
-        sampler.reset()
+        samplingTask?.cancel()
         lastRate = .zero
-        _ = sampler.sampleRate(interfaceMode: settings.interfaceMode)
-
-        let timer = Timer(
-            timeInterval: settings.updateInterval,
-            target: self,
-            selector: #selector(sampleAndUpdateStatusItem),
-            userInfo: nil,
-            repeats: true
-        )
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
-
         updateStatusItem()
-    }
 
-    @objc private func sampleAndUpdateStatusItem() {
-        lastRate = sampler.sampleRate(interfaceMode: settings.interfaceMode)
-        updateStatusItem()
+        let interfaceMode = settings.interfaceMode
+        let delay = Duration.milliseconds(Int64(settings.updateInterval * 1_000))
+        let samplingWorker = samplingWorker
+
+        samplingTask = Task { [weak self] in
+            await samplingWorker.reset()
+            _ = await samplingWorker.sampleRate(interfaceMode: interfaceMode)
+
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: delay)
+                } catch {
+                    return
+                }
+
+                let rate = await samplingWorker.sampleRate(interfaceMode: interfaceMode)
+                guard !Task.isCancelled, let self else { return }
+                lastRate = rate
+                updateStatusItem()
+            }
+        }
     }
 
     func saveSettings() {

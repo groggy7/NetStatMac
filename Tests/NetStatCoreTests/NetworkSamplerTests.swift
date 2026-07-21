@@ -231,6 +231,21 @@ final class NetworkSamplerTests: XCTestCase {
         )
     }
 
+    func testHardwareInterfaceCacheRefreshesAfterExpiration() {
+        let cache = HardwareInterfaceCache(refreshInterval: 30)
+        var loadCount = 0
+
+        func load() -> Set<String> {
+            loadCount += 1
+            return ["en\(loadCount)"]
+        }
+
+        XCTAssertEqual(cache.names(at: 100, load: load), ["en1"])
+        XCTAssertEqual(cache.names(at: 129, load: load), ["en1"])
+        XCTAssertEqual(cache.names(at: 130, load: load), ["en2"])
+        XCTAssertEqual(loadCount, 2)
+    }
+
     func testLegacyInterfaceModePreferencesMapToNewModes() {
         XCTAssertEqual(InterfaceMode(rawValue: "builtIn"), .automatic)
         XCTAssertEqual(InterfaceMode(rawValue: "allActive"), .allHardware)

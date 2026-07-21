@@ -39,6 +39,27 @@ struct NetworkInterfaceCounters: Sendable {
     let sentBytes: UInt64
 }
 
+final class HardwareInterfaceCache {
+    private let refreshInterval: TimeInterval
+    private var cachedNames: Set<String>?
+    private var expiration: TimeInterval = 0
+
+    init(refreshInterval: TimeInterval) {
+        self.refreshInterval = refreshInterval
+    }
+
+    func names(at timestamp: TimeInterval, load: () -> Set<String>) -> Set<String> {
+        if let cachedNames, timestamp < expiration {
+            return cachedNames
+        }
+
+        let names = load()
+        cachedNames = names
+        expiration = timestamp + refreshInterval
+        return names
+    }
+}
+
 public final class NetworkSampler {
     typealias SnapshotProvider = (InterfaceMode) -> NetworkSnapshot?
 
@@ -46,7 +67,17 @@ public final class NetworkSampler {
     private var previousSnapshot: NetworkSnapshot?
 
     public init() {
-        snapshotProvider = Self.systemSnapshot(interfaceMode:)
+        let hardwareCache = HardwareInterfaceCache(refreshInterval: 30)
+        snapshotProvider = { interfaceMode in
+            let hardwareNames = hardwareCache.names(
+                at: ProcessInfo.processInfo.systemUptime,
+                load: Self.hardwareInterfaceNames
+            )
+            return Self.systemSnapshot(
+                interfaceMode: interfaceMode,
+                hardwareInterfaceNames: hardwareNames
+            )
+        }
     }
 
     init(snapshotProvider: @escaping SnapshotProvider) {
@@ -104,9 +135,20 @@ public final class NetworkSampler {
         previousSnapshot = nil
     }
 
-    private static func systemSnapshot(interfaceMode: InterfaceMode) -> NetworkSnapshot? {
+    private static func systemSnapshot(
+        interfaceMode: InterfaceMode,
+        hardwareInterfaceNames: Set<String>
+    ) -> NetworkSnapshot? {
         let primaryNames = primaryInterfaceNames()
-        let hardwareNames = hardwareInterfaceNames()
+        let linkActiveByName: [String: Bool] = Dictionary(
+            uniqueKeysWithValues: hardwareInterfaceNames.compactMap { name in
+                interfaceLinkActive(name).map { (name, $0) }
+            }
+        )
+        let hardwareNames = activeHardwareInterfaceNames(
+            hardwareInterfaceNames: hardwareInterfaceNames,
+            linkActiveByName: linkActiveByName
+        )
         let selectedNames = selectedInterfaceNames(
             interfaceMode: interfaceMode,
             primaryInterfaceNames: primaryNames,
@@ -170,7 +212,7 @@ public final class NetworkSampler {
             kSCNetworkInterfaceTypeWWAN as String
         ])
 
-        let hardwareNames: Set<String> = Set((SCNetworkInterfaceCopyAll() as NSArray).compactMap { value in
+        return Set((SCNetworkInterfaceCopyAll() as NSArray).compactMap { value in
             let interface = value as! SCNetworkInterface
             guard let type = SCNetworkInterfaceGetInterfaceType(interface) as String?,
                   hardwareTypes.contains(type),
@@ -180,16 +222,6 @@ public final class NetworkSampler {
 
             return name
         })
-
-        let linkActiveByName: [String: Bool] = Dictionary(
-            uniqueKeysWithValues: hardwareNames.compactMap { name in
-                interfaceLinkActive(name).map { (name, $0) }
-            }
-        )
-        return activeHardwareInterfaceNames(
-            hardwareInterfaceNames: hardwareNames,
-            linkActiveByName: linkActiveByName
-        )
     }
 
     static func activeHardwareInterfaceNames(
