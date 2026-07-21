@@ -359,7 +359,7 @@ final class FontSizeSliderView: NSView {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let sampler = NetworkSampler()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var timer: Timer?
@@ -426,6 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
+        menu.delegate = self
 
         let header = NSMenuItem(title: "NetStatBar", action: nil, keyEquivalent: "")
         header.isEnabled = false
@@ -449,6 +450,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         statusItem.menu = menu
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        rebuildMenu()
     }
 
     private func parentMenuItem(title: String, submenu: NSMenu) -> NSMenuItem {
@@ -524,6 +529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return }
             self.settings.customItemWidth = width
             self.saveSettings()
+            self.updateStatusItemWidth()
             self.updateStatusItem()
         }
 
@@ -538,6 +544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.customItemWidth = 0
         saveSettings()
         updateStatusItemWidth()
+        updateStatusItem()
     }
 
     @objc private func setItemWidthPreset(_ sender: NSMenuItem) {
@@ -545,6 +552,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.customItemWidth = width
         saveSettings()
         updateStatusItemWidth()
+        updateStatusItem()
     }
 
     private func fontSizeMenu() -> NSMenu {
@@ -689,6 +697,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         settings.displayStyle = displayStyle
         saveSettings()
+        updateStatusItemWidth()
         updateStatusItem()
     }
 
@@ -718,13 +727,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppSettings.reset()
         settings = AppSettings()
         saveSettings()
+        updateFont()
+        updateStatusItemWidth()
         startSampling()
     }
 
     private func saveSettings() {
         settings.save()
-        updateStatusItemWidth()
-        rebuildMenu()
     }
 
     private func title(for rate: NetworkRate) -> String {
