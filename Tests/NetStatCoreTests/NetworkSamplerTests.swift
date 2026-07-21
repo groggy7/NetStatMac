@@ -221,6 +221,16 @@ final class NetworkSamplerTests: XCTestCase {
         )
     }
 
+    func testInactiveHardwareInterfacesAreExcluded() {
+        XCTAssertEqual(
+            NetworkSampler.activeHardwareInterfaceNames(
+                hardwareInterfaceNames: ["en0", "en1", "usb42"],
+                linkActiveByName: ["en0": true, "en1": false]
+            ),
+            ["en0", "usb42"]
+        )
+    }
+
     func testLegacyInterfaceModePreferencesMapToNewModes() {
         XCTAssertEqual(InterfaceMode(rawValue: "builtIn"), .automatic)
         XCTAssertEqual(InterfaceMode(rawValue: "allActive"), .allHardware)

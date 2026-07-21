@@ -170,7 +170,7 @@ public final class NetworkSampler {
             kSCNetworkInterfaceTypeWWAN as String
         ])
 
-        return Set((SCNetworkInterfaceCopyAll() as NSArray).compactMap { value in
+        let hardwareNames: Set<String> = Set((SCNetworkInterfaceCopyAll() as NSArray).compactMap { value in
             let interface = value as! SCNetworkInterface
             guard let type = SCNetworkInterfaceGetInterfaceType(interface) as String?,
                   hardwareTypes.contains(type),
@@ -180,6 +180,37 @@ public final class NetworkSampler {
 
             return name
         })
+
+        let linkActiveByName: [String: Bool] = Dictionary(
+            uniqueKeysWithValues: hardwareNames.compactMap { name in
+                interfaceLinkActive(name).map { (name, $0) }
+            }
+        )
+        return activeHardwareInterfaceNames(
+            hardwareInterfaceNames: hardwareNames,
+            linkActiveByName: linkActiveByName
+        )
+    }
+
+    static func activeHardwareInterfaceNames(
+        hardwareInterfaceNames: Set<String>,
+        linkActiveByName: [String: Bool]
+    ) -> Set<String> {
+        hardwareInterfaceNames.filter { linkActiveByName[$0] ?? true }
+    }
+
+    private static func interfaceLinkActive(_ name: String) -> Bool? {
+        let key = SCDynamicStoreKeyCreateNetworkInterfaceEntity(
+            nil,
+            kSCDynamicStoreDomainState,
+            name as CFString,
+            kSCEntNetLink
+        )
+        guard let state = SCDynamicStoreCopyValue(nil, key) as? [String: Any] else {
+            return nil
+        }
+
+        return state[kSCPropNetLinkActive as String] as? Bool
     }
 
     private static func interfaceCounters(
