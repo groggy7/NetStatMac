@@ -2,14 +2,20 @@ import AppKit
 import Darwin
 
 struct NetworkSnapshot {
+    let countersByInterface: [String: NetworkInterfaceCounters]
+    let timestamp: TimeInterval
+}
+
+struct NetworkInterfaceCounters {
     let receivedBytes: UInt64
     let sentBytes: UInt64
-    let timestamp: TimeInterval
 }
 
 struct NetworkRate {
     let downBytesPerSecond: Double
     let upBytesPerSecond: Double
+
+    static let zero = NetworkRate(downBytesPerSecond: 0, upBytesPerSecond: 0)
 }
 
 enum InterfaceMode: String, CaseIterable {
@@ -153,20 +159,45 @@ final class NetworkSampler {
     private var previousSnapshot: NetworkSnapshot?
 
     func sampleRate(interfaceMode: InterfaceMode) -> NetworkRate {
-        let current = snapshot(interfaceMode: interfaceMode)
-        defer { previousSnapshot = current }
-
-        guard let previousSnapshot else {
-            return NetworkRate(downBytesPerSecond: 0, upBytesPerSecond: 0)
+        guard let current = snapshot(interfaceMode: interfaceMode) else {
+            previousSnapshot = nil
+            return .zero
         }
 
-        let elapsed = max(current.timestamp - previousSnapshot.timestamp, 0.001)
-        let downDelta = current.receivedBytes >= previousSnapshot.receivedBytes
-            ? current.receivedBytes - previousSnapshot.receivedBytes
-            : 0
-        let upDelta = current.sentBytes >= previousSnapshot.sentBytes
-            ? current.sentBytes - previousSnapshot.sentBytes
-            : 0
+        defer { previousSnapshot = current }
+
+        guard let previousSnapshot,
+              current.timestamp > previousSnapshot.timestamp,
+              current.countersByInterface.count == previousSnapshot.countersByInterface.count else {
+            return .zero
+        }
+
+        var downDelta: UInt64 = 0
+        var upDelta: UInt64 = 0
+
+        for (name, currentCounters) in current.countersByInterface {
+            guard let previousCounters = previousSnapshot.countersByInterface[name],
+                  currentCounters.receivedBytes >= previousCounters.receivedBytes,
+                  currentCounters.sentBytes >= previousCounters.sentBytes else {
+                return .zero
+            }
+
+            let (nextDownDelta, downOverflow) = downDelta.addingReportingOverflow(
+                currentCounters.receivedBytes - previousCounters.receivedBytes
+            )
+            let (nextUpDelta, upOverflow) = upDelta.addingReportingOverflow(
+                currentCounters.sentBytes - previousCounters.sentBytes
+            )
+
+            guard !downOverflow, !upOverflow else {
+                return .zero
+            }
+
+            downDelta = nextDownDelta
+            upDelta = nextUpDelta
+        }
+
+        let elapsed = current.timestamp - previousSnapshot.timestamp
 
         return NetworkRate(
             downBytesPerSecond: Double(downDelta) / elapsed,
@@ -178,32 +209,36 @@ final class NetworkSampler {
         previousSnapshot = nil
     }
 
-    private func snapshot(interfaceMode: InterfaceMode) -> NetworkSnapshot {
+    private func snapshot(interfaceMode: InterfaceMode) -> NetworkSnapshot? {
         var interfaces: UnsafeMutablePointer<ifaddrs>?
-        var received: UInt64 = 0
-        var sent: UInt64 = 0
+        var countersByInterface: [String: NetworkInterfaceCounters] = [:]
 
-        if getifaddrs(&interfaces) == 0, let interfaces {
+        guard getifaddrs(&interfaces) == 0 else {
+            return nil
+        }
+
+        if let interfaces {
+            defer { freeifaddrs(interfaces) }
             var cursor: UnsafeMutablePointer<ifaddrs>? = interfaces
 
             while let current = cursor {
-                defer { cursor = current.pointee.ifa_next }
-
                 guard shouldCount(current.pointee, interfaceMode: interfaceMode) else {
+                    cursor = current.pointee.ifa_next
                     continue
                 }
 
+                let name = String(cString: current.pointee.ifa_name)
                 let data = current.pointee.ifa_data.assumingMemoryBound(to: if_data.self).pointee
-                received += UInt64(data.ifi_ibytes)
-                sent += UInt64(data.ifi_obytes)
+                countersByInterface[name] = NetworkInterfaceCounters(
+                    receivedBytes: UInt64(data.ifi_ibytes),
+                    sentBytes: UInt64(data.ifi_obytes)
+                )
+                cursor = current.pointee.ifa_next
             }
-
-            freeifaddrs(interfaces)
         }
 
         return NetworkSnapshot(
-            receivedBytes: received,
-            sentBytes: sent,
+            countersByInterface: countersByInterface,
             timestamp: ProcessInfo.processInfo.systemUptime
         )
     }
@@ -329,7 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var timer: Timer?
     private var settings = AppSettings()
-    private var lastRate = NetworkRate(downBytesPerSecond: 0, upBytesPerSecond: 0)
+    private var lastRate = NetworkRate.zero
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -588,12 +623,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startSampling() {
         timer?.invalidate()
         sampler.reset()
+        lastRate = .zero
         _ = sampler.sampleRate(interfaceMode: settings.interfaceMode)
 
         let timer = Timer(
             timeInterval: settings.updateInterval,
             target: self,
-            selector: #selector(updateStatusItem),
+            selector: #selector(sampleAndUpdateStatusItem),
             userInfo: nil,
             repeats: true
         )
@@ -603,8 +639,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusItem()
     }
 
-    @objc private func updateStatusItem() {
+    @objc private func sampleAndUpdateStatusItem() {
         lastRate = sampler.sampleRate(interfaceMode: settings.interfaceMode)
+        updateStatusItem()
+    }
+
+    private func updateStatusItem() {
         statusItem.button?.toolTip = tooltip()
 
         let down = format(lastRate.downBytesPerSecond)
