@@ -19,7 +19,7 @@ Settings are saved in macOS user defaults and restored the next time the app sta
 
 At each update, NetStatBar reads the cumulative byte counters exposed by macOS for the selected network interfaces. It subtracts the previous counters and divides the difference by the actual elapsed time to calculate the current transfer rate.
 
-The default **Automatic** mode follows macOS's primary IPv4 and IPv6 routes instead of guessing from interface names. When a VPN route and its underlying hardware are both primary, NetStatBar counts the VPN layer only. **All Active Hardware** uses macOS's hardware-interface classifications, so unusual adapters are included while VPN tunnels and other virtual interfaces are excluded.
+The default **Automatic** mode follows macOS's primary IPv4 and IPv6 routes instead of guessing from interface names. When a VPN or other layered route is primary, NetStatBar counts active hardware transports instead, capturing both tunneled and direct traffic without adding the tunnel counters a second time. If no hardware transport exists, it falls back to the primary layered interface. **All Active Hardware** uses macOS's hardware-interface classifications, so unusual adapters are included while VPN tunnels and other virtual interfaces are excluded.
 
 NetStatBar only reads interface-level byte totals. It does not inspect network contents, make network requests, require root access, or collect telemetry.
 

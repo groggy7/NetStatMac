@@ -177,14 +177,25 @@ final class NetworkSamplerTests: XCTestCase {
         )
     }
 
-    func testAutomaticModePrefersVPNLayerOverUnderlyingHardware() {
+    func testAutomaticModeUsesHardwareTransportWhenVPNIsPrimary() {
         XCTAssertEqual(
             NetworkSampler.selectedInterfaceNames(
                 interfaceMode: .automatic,
                 primaryInterfaceNames: ["en0", "utun7"],
-                hardwareInterfaceNames: ["en0"]
+                hardwareInterfaceNames: ["en0", "usb42"]
             ),
-            ["utun7"]
+            ["en0", "usb42"]
+        )
+    }
+
+    func testAutomaticModeFallsBackToLayeredPrimaryWithoutHardware() {
+        XCTAssertEqual(
+            NetworkSampler.selectedInterfaceNames(
+                interfaceMode: .automatic,
+                primaryInterfaceNames: ["ppp0"],
+                hardwareInterfaceNames: []
+            ),
+            ["ppp0"]
         )
     }
 

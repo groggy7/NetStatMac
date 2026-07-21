@@ -131,7 +131,13 @@ public final class NetworkSampler {
         switch interfaceMode {
         case .automatic:
             let layeredPrimaryNames = primaryInterfaceNames.subtracting(hardwareInterfaceNames)
-            return layeredPrimaryNames.isEmpty ? primaryInterfaceNames : layeredPrimaryNames
+            guard !layeredPrimaryNames.isEmpty else {
+                return primaryInterfaceNames
+            }
+
+            return hardwareInterfaceNames.isEmpty
+                ? primaryInterfaceNames
+                : hardwareInterfaceNames
         case .allHardware:
             return hardwareInterfaceNames
         }
