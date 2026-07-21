@@ -60,9 +60,11 @@ The installer:
 
 1. Builds a release executable.
 2. Creates and copies `NetStatBar.app` to `/Applications`.
-3. Registers `~/Library/LaunchAgents/com.local.netstatbar.plist` so the app opens when you log in.
+3. Registers `~/Library/LaunchAgents/com.local.netstatbar.plist` so the app opens when you log in and restarts after an unsuccessful exit.
 4. Starts the installed app.
 
 If an existing copy is installed in `/Applications` and is not writable by the current user, the installer asks for administrator privileges to replace it. Rerun the same command to install a newer local build.
+
+The login agent supervises the app executable directly. A crash or other unsuccessful exit is restarted after launchd's throttle interval; choosing **Quit** exits normally and leaves the app closed until it is opened again or you next log in.
 
 The release executable is ad-hoc signed by the Swift toolchain. The installer does not perform distribution signing or notarization, so it is intended for personal installation rather than redistribution.

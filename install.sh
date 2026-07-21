@@ -8,11 +8,13 @@ APP_DIR="$ROOT_DIR/build/$APP_NAME"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 TARGET_APP="/Applications/$APP_NAME"
+TARGET_EXECUTABLE="$TARGET_APP/Contents/MacOS/NetStatBar"
 LAUNCH_AGENT_LABEL="com.local.netstatbar"
 LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
 LAUNCH_AGENT_PATH="$LAUNCH_AGENT_DIR/$LAUNCH_AGENT_LABEL.plist"
 
 echo "Stopping any running instances of NetStatBar..."
+launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT_PATH" >/dev/null 2>&1 || true
 killall NetStatBar >/dev/null 2>&1 || true
 
 echo "Building NetStatBar ($CONFIGURATION)..."
@@ -67,12 +69,17 @@ cat > "$LAUNCH_AGENT_PATH" <<PLIST
     <string>$LAUNCH_AGENT_LABEL</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/open</string>
-        <string>-a</string>
-        <string>$TARGET_APP</string>
+        <string>$TARGET_EXECUTABLE</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
     <key>LimitLoadToSessionType</key>
     <array>
         <string>Aqua</string>
@@ -82,7 +89,6 @@ cat > "$LAUNCH_AGENT_PATH" <<PLIST
 PLIST
 
 echo "Restarting Launch Agent..."
-launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT_PATH" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT_PATH"
 launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_LABEL"
 
