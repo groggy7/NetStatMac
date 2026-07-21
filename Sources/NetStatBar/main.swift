@@ -85,7 +85,7 @@ struct AppSettings {
     var unitMode: UnitMode
     var scaleMode: ScaleMode
     var interfaceMode: InterfaceMode
-    var showZeroDecimals: Bool
+    var customItemWidth: Double
 
     static let defaults = AppSettings(
         updateInterval: 1,
@@ -93,7 +93,7 @@ struct AppSettings {
         unitMode: .bytes,
         scaleMode: .binary,
         interfaceMode: .builtIn,
-        showZeroDecimals: false
+        customItemWidth: 0
     )
 
     init(
@@ -102,14 +102,14 @@ struct AppSettings {
         unitMode: UnitMode,
         scaleMode: ScaleMode,
         interfaceMode: InterfaceMode,
-        showZeroDecimals: Bool
+        customItemWidth: Double
     ) {
         self.updateInterval = updateInterval
         self.displayStyle = displayStyle
         self.unitMode = unitMode
         self.scaleMode = scaleMode
         self.interfaceMode = interfaceMode
-        self.showZeroDecimals = showZeroDecimals
+        self.customItemWidth = customItemWidth
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -126,7 +126,7 @@ struct AppSettings {
         unitMode = UnitMode(rawValue: defaults.string(forKey: Keys.unitMode) ?? "") ?? fallback.unitMode
         scaleMode = ScaleMode(rawValue: defaults.string(forKey: Keys.scaleMode) ?? "") ?? fallback.scaleMode
         interfaceMode = InterfaceMode(rawValue: defaults.string(forKey: Keys.interfaceMode) ?? "") ?? fallback.interfaceMode
-        showZeroDecimals = defaults.object(forKey: Keys.showZeroDecimals) as? Bool ?? fallback.showZeroDecimals
+        customItemWidth = defaults.double(forKey: Keys.customItemWidth)
     }
 
     func save(to defaults: UserDefaults = .standard) {
@@ -135,7 +135,7 @@ struct AppSettings {
         defaults.set(unitMode.rawValue, forKey: Keys.unitMode)
         defaults.set(scaleMode.rawValue, forKey: Keys.scaleMode)
         defaults.set(interfaceMode.rawValue, forKey: Keys.interfaceMode)
-        defaults.set(showZeroDecimals, forKey: Keys.showZeroDecimals)
+        defaults.set(customItemWidth, forKey: Keys.customItemWidth)
     }
 
     static func reset(defaults: UserDefaults = .standard) {
@@ -148,7 +148,7 @@ struct AppSettings {
         static let unitMode = "unitMode"
         static let scaleMode = "scaleMode"
         static let interfaceMode = "interfaceMode"
-        static let showZeroDecimals = "showZeroDecimals"
+        static let customItemWidth = "customItemWidth"
 
         static let all = [
             updateInterval,
@@ -156,7 +156,7 @@ struct AppSettings {
             unitMode,
             scaleMode,
             interfaceMode,
-            showZeroDecimals
+            customItemWidth
         ]
     }
 }
@@ -247,6 +247,51 @@ final class NetworkSampler {
 }
 
 @MainActor
+final class WidthSliderView: NSView {
+    private let slider = NSSlider()
+    private let valueLabel = NSTextField(labelWithString: "")
+    var onChange: ((Double) -> Void)?
+
+    init(currentWidth: Double, defaultWidth: Double) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 32))
+
+        let titleLabel = NSTextField(labelWithString: "Custom Width:")
+        titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        titleLabel.textColor = NSColor.labelColor
+        titleLabel.frame = NSRect(x: 14, y: 7, width: 90, height: 18)
+
+        let initialVal = currentWidth > 0 ? currentWidth : defaultWidth
+        slider.minValue = 60
+        slider.maxValue = 250
+        slider.doubleValue = initialVal
+        slider.frame = NSRect(x: 108, y: 6, width: 70, height: 18)
+        slider.target = self
+        slider.action = #selector(sliderMoved(_:))
+        slider.isContinuous = true
+
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        valueLabel.textColor = NSColor.secondaryLabelColor
+        valueLabel.alignment = .right
+        valueLabel.frame = NSRect(x: 178, y: 7, width: 34, height: 18)
+        valueLabel.stringValue = "\(Int(initialVal.rounded())) pt"
+
+        addSubview(titleLabel)
+        addSubview(slider)
+        addSubview(valueLabel)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func sliderMoved(_ sender: NSSlider) {
+        let val = sender.doubleValue.rounded()
+        valueLabel.stringValue = "\(Int(val)) pt"
+        onChange?(val)
+    }
+}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let sampler = NetworkSampler()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -267,16 +312,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureStatusItem() {
         statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         statusItem.button?.alignment = .center
+        statusItem.button?.lineBreakMode = .byClipping
+        statusItem.button?.cell?.wraps = false
         updateStatusItemWidth()
         rebuildMenu()
         updateStatusItem()
     }
 
     private func updateStatusItemWidth() {
-        guard let button = statusItem.button else { return }
+        if settings.customItemWidth > 0 {
+            statusItem.length = settings.customItemWidth
+        } else {
+            statusItem.length = calculatedAutoWidth()
+        }
+    }
 
-        let sampleDown = "888.8 KiB/s"
-        let sampleUp = "888.8 KiB/s"
+    private func calculatedAutoWidth() -> Double {
+        guard let button = statusItem.button else { return 125.0 }
+
+        let sampleDown = "88 KiB/s"
+        let sampleUp = "88 KiB/s"
         let sampleTitle: String
 
         switch settings.displayStyle {
@@ -295,7 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let font = button.font ?? NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         let attributes: [NSAttributedString.Key: Any] = [.font: font]
         let textSize = (sampleTitle as NSString).size(withAttributes: attributes)
-        statusItem.length = ceil(textSize.width) + 14.0
+        return ceil(textSize.width) + 14.0
     }
 
     private func rebuildMenu() {
@@ -308,17 +363,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(parentMenuItem(title: "Update Interval", submenu: updateIntervalMenu()))
         menu.addItem(parentMenuItem(title: "Display Style", submenu: displayStyleMenu()))
+        menu.addItem(parentMenuItem(title: "Item Width", submenu: itemWidthMenu()))
         menu.addItem(parentMenuItem(title: "Units", submenu: unitsMenu()))
         menu.addItem(parentMenuItem(title: "Interfaces", submenu: interfaceMenu()))
-
-        let zeroDecimals = NSMenuItem(
-            title: "Show 0.0 Instead of 0",
-            action: #selector(toggleZeroDecimals),
-            keyEquivalent: ""
-        )
-        zeroDecimals.target = self
-        zeroDecimals.state = settings.showZeroDecimals ? .on : .off
-        menu.addItem(zeroDecimals)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -368,6 +415,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return menu
+    }
+
+    private func itemWidthMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        let autoItem = NSMenuItem(title: "Auto (Fit Content)", action: #selector(setItemWidthAuto), keyEquivalent: "")
+        autoItem.target = self
+        autoItem.state = settings.customItemWidth == 0 ? .on : .off
+        menu.addItem(autoItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let presets: [(String, Double)] = [
+            ("Compact - Download Only (70 pt)", 70),
+            ("Standard - Dual Speed (125 pt)", 125),
+            ("Wide (160 pt)", 160),
+            ("Extra Wide (200 pt)", 200)
+        ]
+
+        for (title, width) in presets {
+            let item = NSMenuItem(title: title, action: #selector(setItemWidthPreset(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = width
+            item.state = settings.customItemWidth == width ? .on : .off
+            menu.addItem(item)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        let sliderView = WidthSliderView(
+            currentWidth: settings.customItemWidth,
+            defaultWidth: calculatedAutoWidth()
+        )
+        sliderView.onChange = { [weak self] width in
+            guard let self = self else { return }
+            self.settings.customItemWidth = width
+            self.saveSettings()
+            self.updateStatusItem()
+        }
+
+        let sliderMenuItem = NSMenuItem()
+        sliderMenuItem.view = sliderView
+        menu.addItem(sliderMenuItem)
+
+        return menu
+    }
+
+    @objc private func setItemWidthAuto() {
+        settings.customItemWidth = 0
+        saveSettings()
+        updateStatusItemWidth()
+    }
+
+    @objc private func setItemWidthPreset(_ sender: NSMenuItem) {
+        guard let width = sender.representedObject as? Double else { return }
+        settings.customItemWidth = width
+        saveSettings()
+        updateStatusItemWidth()
     }
 
     private func unitsMenu() -> NSMenu {
@@ -486,12 +591,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startSampling()
     }
 
-    @objc private func toggleZeroDecimals() {
-        settings.showZeroDecimals.toggle()
-        saveSettings()
-        updateStatusItem()
-    }
-
     @objc private func resetSettings() {
         AppSettings.reset()
         settings = AppSettings()
@@ -508,6 +607,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func title(for rate: NetworkRate) -> String {
         let down = format(rate.downBytesPerSecond)
         let up = format(rate.upBytesPerSecond)
+
+        let effectiveWidth = statusItem.length
+
+        // If width is too constrained (< 120 pt) for dual speed, adaptively show Download speed only
+        if effectiveWidth > 0 && effectiveWidth < 120 {
+            switch settings.displayStyle {
+            case .arrows, .compact:
+                return "↓ \(down)"
+            case .labels:
+                return "D \(down)"
+            case .downloadOnly:
+                return "↓ \(down)"
+            case .uploadOnly:
+                return "↑ \(up)"
+            }
+        }
 
         switch settings.displayStyle {
         case .arrows:
@@ -547,24 +662,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let multiplier = settings.unitMode == .bits ? 8.0 : 1.0
         let base = settings.scaleMode == .binary ? 1024.0 : 1000.0
         let units = unitsForCurrentSettings()
+
         var value = (bytesPerSecond * multiplier) / base
         var unitIndex = 0
 
-        while value >= base, unitIndex < units.count - 1 {
+        // Never exceed 99 in current unit; transition to next unit (0.1 MB/s, 0.1 GB/s, etc.) at >= 100
+        while value >= 100.0, unitIndex < units.count - 1 {
             value /= base
             unitIndex += 1
         }
 
         let formattedNumber: String
-        if value >= 100, !settings.showZeroDecimals {
-            formattedNumber = "\(Int(value.rounded()))"
-        } else if value == 0, !settings.showZeroDecimals {
+        if value == 0 {
             formattedNumber = "0"
+        } else if unitIndex == 0 {
+            // For Kilo units (0 to 99): integer format
+            formattedNumber = "\(Int(value.rounded()))"
         } else {
-            formattedNumber = String(format: "%.1f", value)
+            // For Mega, Giga, Tera units
+            if value < 10.0 {
+                let formatted = String(format: "%.1f", value)
+                if formatted == "10.0" || formatted.hasSuffix(".0") {
+                    formattedNumber = "\(Int(value.rounded()))"
+                } else {
+                    formattedNumber = formatted
+                }
+            } else {
+                formattedNumber = "\(Int(value.rounded()))"
+            }
         }
 
-        let paddedNumber = String(repeating: " ", count: max(0, 4 - formattedNumber.count)) + formattedNumber
+        let paddedNumber = String(repeating: " ", count: max(0, 3 - formattedNumber.count)) + formattedNumber
         return "\(paddedNumber) \(units[unitIndex])"
     }
 
