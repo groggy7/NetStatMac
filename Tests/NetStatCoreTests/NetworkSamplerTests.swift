@@ -35,6 +35,21 @@ final class NetworkSamplerTests: XCTestCase {
         XCTAssertEqual(rate.upBytesPerSecond, 600, accuracy: 0.000_001)
     }
 
+    func testMeasurementIncludesExactByteDeltas() {
+        let sampler = makeSampler([
+            snapshot(["en0": (received: 1_000, sent: 2_000)], at: 1),
+            snapshot(["en0": (received: 1_600, sent: 2_900)], at: 3)
+        ])
+
+        XCTAssertEqual(sampler.sample(interfaceMode: .automatic), .zero)
+
+        let measurement = sampler.sample(interfaceMode: .automatic)
+        XCTAssertEqual(measurement.downloadedBytes, 600)
+        XCTAssertEqual(measurement.uploadedBytes, 900)
+        XCTAssertEqual(measurement.rate.downBytesPerSecond, 300, accuracy: 0.000_001)
+        XCTAssertEqual(measurement.rate.upBytesPerSecond, 450, accuracy: 0.000_001)
+    }
+
     func testFailedReadClearsBaseline() {
         let sampler = makeSampler([
             snapshot(["en0": (received: 100, sent: 200)], at: 1),

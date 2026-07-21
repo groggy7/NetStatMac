@@ -29,6 +29,24 @@ public struct NetworkRate: Equatable, Sendable {
     }
 }
 
+public struct NetworkMeasurement: Equatable, Sendable {
+    public let rate: NetworkRate
+    public let downloadedBytes: UInt64
+    public let uploadedBytes: UInt64
+
+    public static let zero = NetworkMeasurement(
+        rate: .zero,
+        downloadedBytes: 0,
+        uploadedBytes: 0
+    )
+
+    public init(rate: NetworkRate, downloadedBytes: UInt64, uploadedBytes: UInt64) {
+        self.rate = rate
+        self.downloadedBytes = downloadedBytes
+        self.uploadedBytes = uploadedBytes
+    }
+}
+
 struct NetworkSnapshot: Sendable {
     let countersByInterface: [String: NetworkInterfaceCounters]
     let timestamp: TimeInterval
@@ -90,7 +108,7 @@ public final class NetworkSampler {
         self.snapshotProvider = snapshotProvider
     }
 
-    public func sampleRate(interfaceMode: InterfaceMode) -> NetworkRate {
+    public func sample(interfaceMode: InterfaceMode) -> NetworkMeasurement {
         guard let current = snapshotProvider(interfaceMode) else {
             previousSnapshot = nil
             return .zero
@@ -131,10 +149,18 @@ public final class NetworkSampler {
 
         let elapsed = current.timestamp - previousSnapshot.timestamp
 
-        return NetworkRate(
-            downBytesPerSecond: Double(downDelta) / elapsed,
-            upBytesPerSecond: Double(upDelta) / elapsed
+        return NetworkMeasurement(
+            rate: NetworkRate(
+                downBytesPerSecond: Double(downDelta) / elapsed,
+                upBytesPerSecond: Double(upDelta) / elapsed
+            ),
+            downloadedBytes: downDelta,
+            uploadedBytes: upDelta
         )
+    }
+
+    public func sampleRate(interfaceMode: InterfaceMode) -> NetworkRate {
+        sample(interfaceMode: interfaceMode).rate
     }
 
     public func reset() {
