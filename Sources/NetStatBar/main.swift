@@ -86,6 +86,7 @@ struct AppSettings {
     var scaleMode: ScaleMode
     var interfaceMode: InterfaceMode
     var customItemWidth: Double
+    var fontSize: Double
 
     static let defaults = AppSettings(
         updateInterval: 1,
@@ -93,7 +94,8 @@ struct AppSettings {
         unitMode: .bytes,
         scaleMode: .binary,
         interfaceMode: .builtIn,
-        customItemWidth: 0
+        customItemWidth: 0,
+        fontSize: 12
     )
 
     init(
@@ -102,7 +104,8 @@ struct AppSettings {
         unitMode: UnitMode,
         scaleMode: ScaleMode,
         interfaceMode: InterfaceMode,
-        customItemWidth: Double
+        customItemWidth: Double,
+        fontSize: Double
     ) {
         self.updateInterval = updateInterval
         self.displayStyle = displayStyle
@@ -110,6 +113,7 @@ struct AppSettings {
         self.scaleMode = scaleMode
         self.interfaceMode = interfaceMode
         self.customItemWidth = customItemWidth
+        self.fontSize = fontSize
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -127,6 +131,9 @@ struct AppSettings {
         scaleMode = ScaleMode(rawValue: defaults.string(forKey: Keys.scaleMode) ?? "") ?? fallback.scaleMode
         interfaceMode = InterfaceMode(rawValue: defaults.string(forKey: Keys.interfaceMode) ?? "") ?? fallback.interfaceMode
         customItemWidth = defaults.double(forKey: Keys.customItemWidth)
+
+        let storedFontSize = defaults.double(forKey: Keys.fontSize)
+        fontSize = storedFontSize > 0 ? storedFontSize : fallback.fontSize
     }
 
     func save(to defaults: UserDefaults = .standard) {
@@ -136,6 +143,7 @@ struct AppSettings {
         defaults.set(scaleMode.rawValue, forKey: Keys.scaleMode)
         defaults.set(interfaceMode.rawValue, forKey: Keys.interfaceMode)
         defaults.set(customItemWidth, forKey: Keys.customItemWidth)
+        defaults.set(fontSize, forKey: Keys.fontSize)
     }
 
     static func reset(defaults: UserDefaults = .standard) {
@@ -149,6 +157,7 @@ struct AppSettings {
         static let scaleMode = "scaleMode"
         static let interfaceMode = "interfaceMode"
         static let customItemWidth = "customItemWidth"
+        static let fontSize = "fontSize"
 
         static let all = [
             updateInterval,
@@ -156,7 +165,8 @@ struct AppSettings {
             unitMode,
             scaleMode,
             interfaceMode,
-            customItemWidth
+            customItemWidth,
+            fontSize
         ]
     }
 }
@@ -292,6 +302,50 @@ final class WidthSliderView: NSView {
 }
 
 @MainActor
+final class FontSizeSliderView: NSView {
+    private let slider = NSSlider()
+    private let valueLabel = NSTextField(labelWithString: "")
+    var onChange: ((Double) -> Void)?
+
+    init(currentSize: Double) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 32))
+
+        let titleLabel = NSTextField(labelWithString: "Font Size:")
+        titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        titleLabel.textColor = NSColor.labelColor
+        titleLabel.frame = NSRect(x: 14, y: 7, width: 90, height: 18)
+
+        slider.minValue = 9
+        slider.maxValue = 18
+        slider.doubleValue = currentSize
+        slider.frame = NSRect(x: 108, y: 6, width: 70, height: 18)
+        slider.target = self
+        slider.action = #selector(sliderMoved(_:))
+        slider.isContinuous = true
+
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        valueLabel.textColor = NSColor.secondaryLabelColor
+        valueLabel.alignment = .right
+        valueLabel.frame = NSRect(x: 178, y: 7, width: 34, height: 18)
+        valueLabel.stringValue = "\(Int(currentSize.rounded())) pt"
+
+        addSubview(titleLabel)
+        addSubview(slider)
+        addSubview(valueLabel)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func sliderMoved(_ sender: NSSlider) {
+        let val = sender.doubleValue.rounded()
+        valueLabel.stringValue = "\(Int(val)) pt"
+        onChange?(val)
+    }
+}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let sampler = NetworkSampler()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -309,8 +363,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timer?.invalidate()
     }
 
+    private func updateFont() {
+        statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: settings.fontSize, weight: .regular)
+    }
+
     private func configureStatusItem() {
-        statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        updateFont()
         statusItem.button?.alignment = .center
         statusItem.button?.lineBreakMode = .byClipping
         statusItem.button?.cell?.wraps = false
@@ -328,7 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func calculatedAutoWidth() -> Double {
-        guard let button = statusItem.button else { return 125.0 }
+        guard statusItem.button != nil else { return 125.0 }
 
         let sampleDown = "88 KiB/s"
         let sampleUp = "88 KiB/s"
@@ -347,7 +405,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sampleTitle = "↑ \(sampleUp)"
         }
 
-        let font = button.font ?? NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: settings.fontSize, weight: .regular)
         let attributes: [NSAttributedString.Key: Any] = [.font: font]
         let textSize = (sampleTitle as NSString).size(withAttributes: attributes)
         return ceil(textSize.width) + 14.0
@@ -364,6 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(parentMenuItem(title: "Update Interval", submenu: updateIntervalMenu()))
         menu.addItem(parentMenuItem(title: "Display Style", submenu: displayStyleMenu()))
         menu.addItem(parentMenuItem(title: "Item Width", submenu: itemWidthMenu()))
+        menu.addItem(parentMenuItem(title: "Font Size", submenu: fontSizeMenu()))
         menu.addItem(parentMenuItem(title: "Units", submenu: unitsMenu()))
         menu.addItem(parentMenuItem(title: "Interfaces", submenu: interfaceMenu()))
 
@@ -473,6 +532,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.customItemWidth = width
         saveSettings()
         updateStatusItemWidth()
+    }
+
+    private func fontSizeMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        let presets: [(String, Double)] = [
+            ("Small (10 pt)", 10),
+            ("Standard (12 pt)", 12),
+            ("Large (14 pt)", 14)
+        ]
+
+        for (title, size) in presets {
+            let item = NSMenuItem(title: title, action: #selector(setFontSizePreset(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = size
+            item.state = settings.fontSize == size ? .on : .off
+            menu.addItem(item)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        let sliderView = FontSizeSliderView(currentSize: settings.fontSize)
+        sliderView.onChange = { [weak self] size in
+            guard let self = self else { return }
+            self.settings.fontSize = size
+            self.saveSettings()
+            self.updateFont()
+            self.updateStatusItemWidth()
+            self.updateStatusItem()
+        }
+
+        let sliderMenuItem = NSMenuItem()
+        sliderMenuItem.view = sliderView
+        menu.addItem(sliderMenuItem)
+
+        return menu
+    }
+
+    @objc private func setFontSizePreset(_ sender: NSMenuItem) {
+        guard let size = sender.representedObject as? Double else { return }
+        settings.fontSize = size
+        saveSettings()
+        updateFont()
+        updateStatusItemWidth()
+        updateStatusItem()
     }
 
     private func unitsMenu() -> NSMenu {
