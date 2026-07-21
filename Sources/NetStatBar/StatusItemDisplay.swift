@@ -89,34 +89,12 @@ extension AppDelegate {
     }
 
     private func title(for rate: NetworkRate) -> String {
-        let down = format(rate.downBytesPerSecond)
-        let up = format(rate.upBytesPerSecond)
-
-        if statusItem.length > 0 && statusItem.length < 120 {
-            switch settings.displayStyle {
-            case .arrows, .compact:
-                return "↓ \(down)"
-            case .labels:
-                return "D \(down)"
-            case .downloadOnly:
-                return "↓ \(down)"
-            case .uploadOnly:
-                return "↑ \(up)"
-            }
-        }
-
-        switch settings.displayStyle {
-        case .arrows:
-            return "↓ \(down)  ↑ \(up)"
-        case .labels:
-            return "D \(down)  U \(up)"
-        case .compact:
-            return "\(down) | \(up)"
-        case .downloadOnly:
-            return "↓ \(down)"
-        case .uploadOnly:
-            return "↑ \(up)"
-        }
+        StatusTitleFormatter.title(
+            for: rate,
+            displayStyle: settings.displayStyle,
+            unitMode: settings.unitMode,
+            isNarrow: statusItem.length > 0 && statusItem.length < 120
+        )
     }
 
     private func tooltip() -> String {

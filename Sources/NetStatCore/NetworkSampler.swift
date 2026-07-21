@@ -39,6 +39,12 @@ struct NetworkInterfaceCounters: Sendable {
     let sentBytes: UInt64
 }
 
+private struct RouteMessageHeader {
+    let length: UInt16
+    let version: UInt8
+    let type: UInt8
+}
+
 final class HardwareInterfaceCache {
     private let refreshInterval: TimeInterval
     private var cachedNames: Set<String>?
@@ -133,6 +139,13 @@ public final class NetworkSampler {
 
     public func reset() {
         previousSnapshot = nil
+    }
+
+    static func liveSystemSnapshot(interfaceMode: InterfaceMode) -> NetworkSnapshot? {
+        systemSnapshot(
+            interfaceMode: interfaceMode,
+            hardwareInterfaceNames: hardwareInterfaceNames()
+        )
     }
 
     private static func systemSnapshot(
@@ -273,19 +286,19 @@ public final class NetworkSampler {
         var offset = 0
 
         while offset < actualSize {
-            guard actualSize - offset >= MemoryLayout<if_msghdr>.size else {
+            guard actualSize - offset >= MemoryLayout<RouteMessageHeader>.size else {
                 return nil
             }
 
             let messagePointer = buffer.advanced(by: offset)
-            let header = messagePointer.assumingMemoryBound(to: if_msghdr.self).pointee
-            let messageLength = Int(header.ifm_msglen)
+            let header = messagePointer.assumingMemoryBound(to: RouteMessageHeader.self).pointee
+            let messageLength = Int(header.length)
 
             guard messageLength > 0, offset + messageLength <= actualSize else {
                 return nil
             }
 
-            if header.ifm_type == UInt8(RTM_IFINFO2) {
+            if header.type == UInt8(RTM_IFINFO2) {
                 guard messageLength >= MemoryLayout<if_msghdr2>.size else {
                     return nil
                 }

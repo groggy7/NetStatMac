@@ -27,6 +27,10 @@ let package = Package(
         .testTarget(
             name: "NetStatCoreTests",
             dependencies: ["NetStatCore"]
+        ),
+        .testTarget(
+            name: "NetStatBarTests",
+            dependencies: ["NetStatBar"]
         )
     ]
 )

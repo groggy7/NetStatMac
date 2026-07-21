@@ -246,6 +246,15 @@ final class NetworkSamplerTests: XCTestCase {
         XCTAssertEqual(loadCount, 2)
     }
 
+    func testLiveSystemSnapshotReadsRouteStatistics() throws {
+        let snapshot = try XCTUnwrap(
+            NetworkSampler.liveSystemSnapshot(interfaceMode: .automatic)
+        )
+
+        XCTAssertGreaterThan(snapshot.timestamp, 0)
+        XCTAssertTrue(snapshot.countersByInterface.keys.allSatisfy { !$0.isEmpty })
+    }
+
     func testLegacyInterfaceModePreferencesMapToNewModes() {
         XCTAssertEqual(InterfaceMode(rawValue: "builtIn"), .automatic)
         XCTAssertEqual(InterfaceMode(rawValue: "allActive"), .allHardware)

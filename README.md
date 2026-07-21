@@ -46,7 +46,7 @@ Run the non-UI unit tests with Swift Package Manager:
 swift test
 ```
 
-The tests cover rate calculation, invalid samples, interface and counter changes, unit conversion, and display formatting. AppKit menu interactions are not included.
+The tests cover rate calculation, invalid samples, interface and counter changes, live system snapshots, unit conversion, status layout and settings behavior, and installer rollback. Direct AppKit menu interactions are not included.
 
 ## Install and start at login
 
