@@ -398,7 +398,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .labels:
             sampleTitle = "D \(sampleDown)  U \(sampleUp)"
         case .compact:
-            sampleTitle = "\(sampleDown)/\(sampleUp)"
+            sampleTitle = "\(sampleDown) | \(sampleUp)"
         case .downloadOnly:
             sampleTitle = "↓ \(sampleDown)"
         case .uploadOnly:
@@ -637,8 +637,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func updateStatusItem() {
         lastRate = sampler.sampleRate(interfaceMode: settings.interfaceMode)
-        statusItem.button?.title = title(for: lastRate)
         statusItem.button?.toolTip = tooltip()
+
+        let down = format(lastRate.downBytesPerSecond)
+        let up = format(lastRate.upBytesPerSecond)
+        let effectiveWidth = statusItem.length
+        let isNarrow = effectiveWidth > 0 && effectiveWidth < 120
+
+        if settings.displayStyle == .compact && !isNarrow {
+            let font = NSFont.monospacedDigitSystemFont(ofSize: settings.fontSize, weight: .regular)
+            let attrString = NSMutableAttributedString()
+            let mainAttrs: [NSAttributedString.Key: Any] = [.font: font]
+            let pipeAttrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor.systemGreen
+            ]
+
+            attrString.append(NSAttributedString(string: "\(down) ", attributes: mainAttrs))
+            attrString.append(NSAttributedString(string: "|", attributes: pipeAttrs))
+            attrString.append(NSAttributedString(string: " \(up)", attributes: mainAttrs))
+
+            statusItem.button?.attributedTitle = attrString
+        } else {
+            statusItem.button?.title = title(for: lastRate)
+        }
     }
 
     @objc private func setUpdateInterval(_ sender: NSMenuItem) {
@@ -734,7 +756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .labels:
             return "D \(down)  U \(up)"
         case .compact:
-            return "\(down)/\(up)"
+            return "\(down) | \(up)"
         case .downloadOnly:
             return "↓ \(down)"
         case .uploadOnly:
