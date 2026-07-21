@@ -24,6 +24,23 @@ enum DisplayStyle: String, CaseIterable {
     }
 }
 
+enum AppAppearance: String, CaseIterable {
+    case system
+    case light
+    case dark
+
+    var title: String {
+        switch self {
+        case .system:
+            return "System"
+        case .light:
+            return "Light"
+        case .dark:
+            return "Dark"
+        }
+    }
+}
+
 struct AppSettings {
     static let updateIntervals: [TimeInterval] = [0.5, 1, 2, 5]
     static let itemWidthRange = 60.0...250.0
@@ -33,6 +50,7 @@ struct AppSettings {
     var displayStyle: DisplayStyle
     var unitMode: UnitMode
     var interfaceMode: InterfaceMode
+    var appearance: AppAppearance
     var customItemWidth: Double
     var fontSize: Double
 
@@ -41,6 +59,7 @@ struct AppSettings {
         displayStyle: .arrows,
         unitMode: .bytes,
         interfaceMode: .automatic,
+        appearance: .system,
         customItemWidth: 0,
         fontSize: 12
     )
@@ -50,6 +69,7 @@ struct AppSettings {
         displayStyle: DisplayStyle,
         unitMode: UnitMode,
         interfaceMode: InterfaceMode,
+        appearance: AppAppearance,
         customItemWidth: Double,
         fontSize: Double
     ) {
@@ -57,6 +77,7 @@ struct AppSettings {
         self.displayStyle = displayStyle
         self.unitMode = unitMode
         self.interfaceMode = interfaceMode
+        self.appearance = appearance
         self.customItemWidth = customItemWidth
         self.fontSize = fontSize
     }
@@ -77,6 +98,8 @@ struct AppSettings {
             ?? fallback.unitMode
         interfaceMode = InterfaceMode(rawValue: defaults.string(forKey: Keys.interfaceMode) ?? "")
             ?? fallback.interfaceMode
+        appearance = AppAppearance(rawValue: defaults.string(forKey: Keys.appearance) ?? "")
+            ?? fallback.appearance
 
         let storedWidth = defaults.double(forKey: Keys.customItemWidth)
         if storedWidth.isFinite && (storedWidth == 0 || Self.itemWidthRange.contains(storedWidth)) {
@@ -98,6 +121,7 @@ struct AppSettings {
         defaults.set(displayStyle.rawValue, forKey: Keys.displayStyle)
         defaults.set(unitMode.rawValue, forKey: Keys.unitMode)
         defaults.set(interfaceMode.rawValue, forKey: Keys.interfaceMode)
+        defaults.set(appearance.rawValue, forKey: Keys.appearance)
         defaults.set(customItemWidth, forKey: Keys.customItemWidth)
         defaults.set(fontSize, forKey: Keys.fontSize)
     }
@@ -111,6 +135,7 @@ struct AppSettings {
         static let displayStyle = "displayStyle"
         static let unitMode = "unitMode"
         static let interfaceMode = "interfaceMode"
+        static let appearance = "appearance"
         static let customItemWidth = "customItemWidth"
         static let fontSize = "fontSize"
 
@@ -119,6 +144,7 @@ struct AppSettings {
             displayStyle,
             unitMode,
             interfaceMode,
+            appearance,
             customItemWidth,
             fontSize
         ]

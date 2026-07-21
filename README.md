@@ -6,6 +6,9 @@ NetStatBar is a small native macOS menu bar app that shows the current download 
 
 Click the menu bar readout to configure:
 
+- **Compact dashboard:** current download/upload rates, a 60-second activity graph, usage tracked today, this month, and this year, plus the three applications currently using the most bandwidth.
+- **Appearance:** follow the system appearance or explicitly use light or dark mode.
+
 - **Update interval:** 0.5, 1, 2, or 5 seconds.
 - **Display style:** arrows, labels, compact, download only, or upload only.
 - **Item width:** automatic sizing, four presets, or a custom width from 60 to 250 points. Narrow dual-rate layouts automatically show download only.
@@ -15,6 +18,8 @@ Click the menu bar readout to configure:
 
 Settings are saved in macOS user defaults and restored the next time the app starts. The menu also includes a reset-to-defaults action.
 
+The usage figures are local counters maintained by NetStatBar. They start when this version is installed, cover only periods when the app is running, and reset automatically at local day, month, and year boundaries. Download and upload details are available by hovering over a usage total, and usage history can be reset separately from preferences.
+
 ## How it works
 
 At each update, NetStatBar reads the cumulative byte counters exposed by macOS for the selected network interfaces. It subtracts the previous counters and divides the difference by the actual elapsed time to calculate the current transfer rate.
@@ -22,6 +27,8 @@ At each update, NetStatBar reads the cumulative byte counters exposed by macOS f
 The default **Automatic** mode follows macOS's primary IPv4 and IPv6 routes instead of guessing from interface names. When a VPN or other layered route is primary, NetStatBar counts active hardware transports instead, capturing both tunneled and direct traffic without adding the tunnel counters a second time. If no hardware transport exists, it falls back to the primary layered interface. **All Active Hardware** uses macOS's hardware-interface classifications, so unusual adapters are included while VPN tunnels and other virtual interfaces are excluded.
 
 NetStatBar only reads interface-level byte totals. It does not inspect network contents, make network requests, require root access, or collect telemetry.
+
+The activity graph keeps only the last 60 seconds of existing rate samples in memory. The top-process list is measured on demand with macOS's built-in `nettop` utility. It runs for one second only when the menu opens, groups helper processes under their owning app when possible, uses the owning application's icon, and does no process monitoring while the menu is closed.
 
 ## Requirements
 
@@ -46,7 +53,7 @@ Run the non-UI unit tests with Swift Package Manager:
 swift test
 ```
 
-The tests cover rate calculation, invalid samples, interface and counter changes, live system snapshots, unit conversion, status layout and settings behavior, and installer rollback. Direct AppKit menu interactions are not included.
+The tests cover rate calculation, exact byte deltas, bounded graph history, usage-period rollovers and persistence, process-output parsing and aggregation, invalid samples, interface and counter changes, live system snapshots, unit conversion, status layout and settings behavior, and installer rollback. Direct AppKit menu interactions are not included.
 
 ## Install and start at login
 

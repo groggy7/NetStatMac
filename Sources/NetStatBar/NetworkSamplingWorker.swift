@@ -7,7 +7,7 @@ actor NetworkSamplingWorker {
         sampler.reset()
     }
 
-    func sampleRate(interfaceMode: InterfaceMode) -> NetworkRate {
-        sampler.sampleRate(interfaceMode: interfaceMode)
+    func sample(interfaceMode: InterfaceMode) -> NetworkMeasurement {
+        sampler.sample(interfaceMode: interfaceMode)
     }
 }

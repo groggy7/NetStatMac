@@ -1,16 +1,203 @@
 import AppKit
 import NetStatCore
 
+final class DashboardPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 extension AppDelegate {
-    func rebuildMenu() {
+    func configureDashboardPanel() {
+        let dashboard = DashboardMenuView()
+        let panel = DashboardPanel(
+            contentRect: NSRect(origin: .zero, size: DashboardMenuView.preferredSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.contentView = dashboard
+        panel.backgroundColor = .white
+        panel.isOpaque = true
+        panel.alphaValue = 1
+        panel.hasShadow = true
+        panel.level = .popUpMenu
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .none
+        panel.collectionBehavior = [.transient, .moveToActiveSpace, .fullScreenAuxiliary]
+
+        dashboardPanel = panel
+        dashboardView = dashboard
+        dashboard.onPreferences = { [weak self] dashboard in
+            self?.showPreferencesMenu(from: dashboard)
+        }
+        dashboard.onQuit = {
+            NSApp.terminate(nil)
+        }
+        updateDashboard()
+        applyAppearance()
+    }
+
+    @objc func toggleDashboardPanel() {
+        if isDashboardOpen {
+            closeDashboardPanel()
+        } else {
+            showDashboardPanel()
+        }
+    }
+
+    func showDashboardPanel() {
+        guard let dashboardPanel, let dashboardView else { return }
+
+        positionDashboardPanel(dashboardPanel)
+        isDashboardOpen = true
+        updateDashboard()
+        if hasProcessActivitySnapshot {
+            dashboardView.update(
+                processes: latestProcessActivities,
+                unitMode: settings.unitMode
+            )
+        } else {
+            dashboardView.showProcessMeasurementPending()
+        }
+        dashboardPanel.orderFrontRegardless()
+        installDashboardEventMonitors()
+        startProcessMonitoring(for: dashboardView)
+    }
+
+    func closeDashboardPanel() {
+        guard isDashboardOpen else { return }
+
+        isDashboardOpen = false
+        processSamplingTask?.cancel()
+        processSamplingTask = nil
+        dashboardPanel?.resignKey()
+        dashboardPanel?.orderOut(nil)
+        removeDashboardEventMonitors()
+    }
+
+    func removeDashboardEventMonitors() {
+        if let localEventMonitor {
+            NSEvent.removeMonitor(localEventMonitor)
+            self.localEventMonitor = nil
+        }
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
+        }
+    }
+
+    func updateDashboard() {
+        dashboardView?.update(
+            rate: lastRate,
+            usage: usageTracker.summary(),
+            history: rateHistory.points,
+            unitMode: settings.unitMode
+        )
+    }
+
+    private func startProcessMonitoring(for dashboard: DashboardMenuView) {
+        processSamplingTask?.cancel()
+
+        let worker = processSamplingWorker
+        processSamplingTask = Task { [weak self, weak dashboard] in
+            while !Task.isCancelled {
+                let records = await worker.sampleTopProcesses()
+                guard !Task.isCancelled,
+                      let self,
+                      let dashboard,
+                      isDashboardOpen,
+                      dashboardView === dashboard else {
+                    return
+                }
+
+                let activities = ProcessActivityPresenter.topActivities(from: records)
+                latestProcessActivities = activities
+                hasProcessActivitySnapshot = true
+                dashboard.update(
+                    processes: activities,
+                    unitMode: settings.unitMode
+                )
+
+                do {
+                    // nettop itself samples for one second. This short pause prevents
+                    // a tight retry loop if it exits early or temporarily fails.
+                    try await Task.sleep(for: .milliseconds(100))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    private func positionDashboardPanel(_ panel: NSPanel) {
+        guard let button = statusItem.button, let buttonWindow = button.window else { return }
+
+        let buttonInWindow = button.convert(button.bounds, to: nil)
+        let buttonOnScreen = buttonWindow.convertToScreen(buttonInWindow)
+        let visibleFrame = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        var origin = NSPoint(
+            x: buttonOnScreen.midX - panel.frame.width / 2,
+            y: buttonOnScreen.minY - panel.frame.height - 5
+        )
+
+        origin.x = min(max(origin.x, visibleFrame.minX + 6), visibleFrame.maxX - panel.frame.width - 6)
+        if origin.y < visibleFrame.minY + 6 {
+            origin.y = buttonOnScreen.maxY + 5
+        }
+
+        panel.setFrameOrigin(NSPoint(x: round(origin.x), y: round(origin.y)))
+    }
+
+    private func installDashboardEventMonitors() {
+        removeDashboardEventMonitors()
+
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .keyDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+
+            if event.type == .keyDown, event.keyCode == 53 {
+                closeDashboardPanel()
+                return nil
+            }
+
+            if event.window === dashboardPanel || event.window === statusItem.button?.window {
+                return event
+            }
+
+            closeDashboardPanel()
+            return event
+        }
+
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeDashboardPanel()
+            }
+        }
+    }
+
+    private func showPreferencesMenu(from dashboard: DashboardMenuView) {
+        guard let panel = dashboardPanel else { return }
+
+        let anchorInWindow = dashboard.convert(
+            NSPoint(x: dashboard.bounds.maxX - 2, y: 317),
+            to: nil
+        )
+        let anchorOnScreen = panel.convertPoint(toScreen: anchorInWindow)
+        let menu = preferencesMenu()
+        menu.appearance = panel.appearance
+
+        menu.popUp(positioning: nil, at: anchorOnScreen, in: nil)
+    }
+
+    private func preferencesMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.delegate = self
-
-        let header = NSMenuItem(title: "NetStatBar", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        menu.addItem(NSMenuItem.separator())
-
+        menu.addItem(parentMenuItem(title: "Appearance", submenu: appearanceMenu()))
         menu.addItem(parentMenuItem(title: "Update Interval", submenu: updateIntervalMenu()))
         menu.addItem(parentMenuItem(title: "Display Style", submenu: displayStyleMenu()))
         menu.addItem(parentMenuItem(title: "Item Width", submenu: itemWidthMenu()))
@@ -24,14 +211,33 @@ extension AppDelegate {
         reset.target = self
         menu.addItem(reset)
 
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        let resetUsage = NSMenuItem(
+            title: "Reset Usage Statistics",
+            action: #selector(resetUsageStatistics),
+            keyEquivalent: ""
+        )
+        resetUsage.target = self
+        menu.addItem(resetUsage)
 
-        statusItem.menu = menu
+        return menu
     }
 
-    func menuDidClose(_ menu: NSMenu) {
-        rebuildMenu()
+    private func appearanceMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        for appearance in AppAppearance.allCases {
+            let item = NSMenuItem(
+                title: appearance.title,
+                action: #selector(setAppearance(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = appearance.rawValue
+            item.state = settings.appearance == appearance ? .on : .off
+            menu.addItem(item)
+        }
+
+        return menu
     }
 
     private func parentMenuItem(title: String, submenu: NSMenu) -> NSMenuItem {
@@ -243,6 +449,17 @@ extension AppDelegate {
         updateStatusItem()
     }
 
+    @objc private func setAppearance(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let appearance = AppAppearance(rawValue: rawValue) else {
+            return
+        }
+
+        settings.appearance = appearance
+        saveSettings()
+        applyAppearance()
+    }
+
     @objc private func setInterfaceMode(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
               let interfaceMode = InterfaceMode(rawValue: rawValue) else {
@@ -258,8 +475,14 @@ extension AppDelegate {
         AppSettings.reset()
         settings = AppSettings()
         saveSettings()
+        applyAppearance()
         updateFont()
         updateStatusItemWidth()
         startSampling()
+    }
+
+    @objc private func resetUsageStatistics() {
+        usageTracker.reset()
+        updateDashboard()
     }
 }

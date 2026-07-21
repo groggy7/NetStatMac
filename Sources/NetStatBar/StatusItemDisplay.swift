@@ -7,8 +7,11 @@ extension AppDelegate {
         statusItem.button?.alignment = .center
         statusItem.button?.lineBreakMode = .byClipping
         statusItem.button?.cell?.wraps = false
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(toggleDashboardPanel)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         updateStatusItemWidth()
-        rebuildMenu()
+        configureDashboardPanel()
         updateStatusItem()
     }
 
