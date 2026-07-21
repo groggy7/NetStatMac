@@ -9,13 +9,56 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 TARGET_APP="/Applications/$APP_NAME"
 TARGET_EXECUTABLE="$TARGET_APP/Contents/MacOS/NetStatBar"
+STAGED_APP="/Applications/.$APP_NAME.installing.$$"
+BACKUP_APP="/Applications/.$APP_NAME.backup.$$"
 LAUNCH_AGENT_LABEL="com.local.netstatbar"
 LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
 LAUNCH_AGENT_PATH="$LAUNCH_AGENT_DIR/$LAUNCH_AGENT_LABEL.plist"
+LAUNCH_AGENT_TEMP=""
+TRANSACTION_ACTIVE=0
+INSTALL_COMPLETE=0
+APP_STOPPED=0
+HAD_EXISTING_APP=0
+INSTALL_WITH_SUDO=0
 
-echo "Stopping any running instances of NetStatBar..."
-launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT_PATH" >/dev/null 2>&1 || true
-killall NetStatBar >/dev/null 2>&1 || true
+install_command() {
+    if [ "$INSTALL_WITH_SUDO" -eq 1 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
+cleanup() {
+    local exit_status="$?"
+    set +e
+
+    if [ "$exit_status" -ne 0 ] && [ "$TRANSACTION_ACTIVE" -eq 1 ] && [ "$INSTALL_COMPLETE" -eq 0 ]; then
+        echo "Installation failed; restoring the previous app..." >&2
+        install_command rm -rf "$TARGET_APP"
+
+        if [ "$HAD_EXISTING_APP" -eq 1 ] && [ -d "$BACKUP_APP" ]; then
+            install_command mv "$BACKUP_APP" "$TARGET_APP"
+        fi
+
+        if [ "$APP_STOPPED" -eq 1 ] && [ "$HAD_EXISTING_APP" -eq 1 ] && [ -f "$LAUNCH_AGENT_PATH" ]; then
+            launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT_PATH" >/dev/null 2>&1 || true
+            launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_LABEL" >/dev/null 2>&1 || true
+        fi
+    fi
+
+    install_command rm -rf "$STAGED_APP"
+    rm -rf "$APP_DIR"
+
+    if [ -n "$LAUNCH_AGENT_TEMP" ]; then
+        rm -f "$LAUNCH_AGENT_TEMP"
+    fi
+
+    trap - EXIT
+    exit "$exit_status"
+}
+
+trap cleanup EXIT
 
 echo "Building NetStatBar ($CONFIGURATION)..."
 cd "$ROOT_DIR"
@@ -38,36 +81,22 @@ codesign --verify --deep --strict "$APP_DIR"
 # Prevent indexing of build directory to avoid double app detection
 touch "$ROOT_DIR/build/.metadata_never_index"
 
-echo "Installing to /Applications..."
+echo "Preparing installation..."
 mkdir -p "$LAUNCH_AGENT_DIR"
 
-# Remove target app. If permission is denied, run with sudo.
-if [ -d "$TARGET_APP" ]; then
-    if [ -w "$TARGET_APP" ]; then
-        rm -rf "$TARGET_APP"
-    else
-        echo "Removing previous installation (requires sudo privileges)..."
-        sudo rm -rf "$TARGET_APP"
-    fi
+if [ ! -w "$(dirname "$TARGET_APP")" ]; then
+    echo "Installing to /Applications requires administrator privileges..."
+    sudo -v
+    INSTALL_WITH_SUDO=1
 fi
 
-cp -R "$APP_DIR" "$TARGET_APP"
+install_command cp -R "$APP_DIR" "$STAGED_APP"
 
-echo "Verifying installed app signature..."
-codesign --verify --deep --strict "$TARGET_APP"
+echo "Verifying staged app signature..."
+codesign --verify --deep --strict "$STAGED_APP"
 
-echo "Updating Launch Services registration..."
-LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
-if [ -x "$LSREGISTER" ]; then
-    "$LSREGISTER" -u "$APP_DIR" || true
-    "$LSREGISTER" -f "$TARGET_APP" || true
-fi
-
-# Remove the built app bundle from the project directory so it's not indexed
-rm -rf "$APP_DIR"
-
-echo "Configuring Launch Agent..."
-cat > "$LAUNCH_AGENT_PATH" <<PLIST
+LAUNCH_AGENT_TEMP="$(mktemp "$LAUNCH_AGENT_DIR/.$LAUNCH_AGENT_LABEL.XXXXXX")"
+cat > "$LAUNCH_AGENT_TEMP" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -94,9 +123,41 @@ cat > "$LAUNCH_AGENT_PATH" <<PLIST
 </dict>
 </plist>
 PLIST
+plutil -lint "$LAUNCH_AGENT_TEMP" >/dev/null
+chmod 644 "$LAUNCH_AGENT_TEMP"
+
+echo "Stopping the current NetStatBar instance..."
+TRANSACTION_ACTIVE=1
+launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT_PATH" >/dev/null 2>&1 || true
+killall NetStatBar >/dev/null 2>&1 || true
+APP_STOPPED=1
+
+echo "Installing to /Applications..."
+if [ -d "$TARGET_APP" ]; then
+    HAD_EXISTING_APP=1
+    install_command mv "$TARGET_APP" "$BACKUP_APP"
+fi
+install_command mv "$STAGED_APP" "$TARGET_APP"
+
+echo "Verifying installed app signature..."
+codesign --verify --deep --strict "$TARGET_APP"
+
+mv "$LAUNCH_AGENT_TEMP" "$LAUNCH_AGENT_PATH"
+LAUNCH_AGENT_TEMP=""
+
+echo "Updating Launch Services registration..."
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+if [ -x "$LSREGISTER" ]; then
+    "$LSREGISTER" -u "$APP_DIR" || true
+    "$LSREGISTER" -f "$TARGET_APP" || true
+fi
 
 echo "Restarting Launch Agent..."
 launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT_PATH"
 launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_LABEL"
+launchctl print "gui/$(id -u)/$LAUNCH_AGENT_LABEL" >/dev/null
+
+INSTALL_COMPLETE=1
+install_command rm -rf "$BACKUP_APP" || true
 
 echo "Successfully installed and started $TARGET_APP"
