@@ -67,4 +67,4 @@ If an existing copy is installed in `/Applications` and is not writable by the c
 
 The login agent supervises the app executable directly. A crash or other unsuccessful exit is restarted after launchd's throttle interval; choosing **Quit** exits normally and leaves the app closed until it is opened again or you next log in.
 
-The release executable is ad-hoc signed by the Swift toolchain. The installer does not perform distribution signing or notarization, so it is intended for personal installation rather than redistribution.
+The installer ad-hoc signs and verifies the completed app bundle. It does not perform Developer ID distribution signing or notarization, so it is intended for personal installation rather than redistribution.

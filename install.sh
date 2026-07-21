@@ -31,6 +31,10 @@ if [ -f "$ROOT_DIR/Resources/AppIcon.icns" ]; then
     cp "$ROOT_DIR/Resources/AppIcon.icns" "$CONTENTS_DIR/Resources/AppIcon.icns"
 fi
 
+echo "Ad-hoc signing app bundle..."
+codesign --force --sign - "$APP_DIR"
+codesign --verify --deep --strict "$APP_DIR"
+
 # Prevent indexing of build directory to avoid double app detection
 touch "$ROOT_DIR/build/.metadata_never_index"
 
@@ -48,6 +52,9 @@ if [ -d "$TARGET_APP" ]; then
 fi
 
 cp -R "$APP_DIR" "$TARGET_APP"
+
+echo "Verifying installed app signature..."
+codesign --verify --deep --strict "$TARGET_APP"
 
 echo "Updating Launch Services registration..."
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
