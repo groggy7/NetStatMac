@@ -63,27 +63,12 @@ enum UnitMode: String, CaseIterable {
     }
 }
 
-enum ScaleMode: String, CaseIterable {
-    case binary = "binary"
-    case decimal = "decimal"
-
-    var title: String {
-        switch self {
-        case .binary:
-            return "Binary (KiB/MiB)"
-        case .decimal:
-            return "Decimal (KB/MB)"
-        }
-    }
-}
-
 struct AppSettings {
     static let updateIntervals: [TimeInterval] = [0.5, 1, 2, 5]
 
     var updateInterval: TimeInterval
     var displayStyle: DisplayStyle
     var unitMode: UnitMode
-    var scaleMode: ScaleMode
     var interfaceMode: InterfaceMode
     var customItemWidth: Double
     var fontSize: Double
@@ -92,7 +77,6 @@ struct AppSettings {
         updateInterval: 1,
         displayStyle: .arrows,
         unitMode: .bytes,
-        scaleMode: .binary,
         interfaceMode: .builtIn,
         customItemWidth: 0,
         fontSize: 12
@@ -102,7 +86,6 @@ struct AppSettings {
         updateInterval: TimeInterval,
         displayStyle: DisplayStyle,
         unitMode: UnitMode,
-        scaleMode: ScaleMode,
         interfaceMode: InterfaceMode,
         customItemWidth: Double,
         fontSize: Double
@@ -110,7 +93,6 @@ struct AppSettings {
         self.updateInterval = updateInterval
         self.displayStyle = displayStyle
         self.unitMode = unitMode
-        self.scaleMode = scaleMode
         self.interfaceMode = interfaceMode
         self.customItemWidth = customItemWidth
         self.fontSize = fontSize
@@ -128,7 +110,6 @@ struct AppSettings {
 
         displayStyle = DisplayStyle(rawValue: defaults.string(forKey: Keys.displayStyle) ?? "") ?? fallback.displayStyle
         unitMode = UnitMode(rawValue: defaults.string(forKey: Keys.unitMode) ?? "") ?? fallback.unitMode
-        scaleMode = ScaleMode(rawValue: defaults.string(forKey: Keys.scaleMode) ?? "") ?? fallback.scaleMode
         interfaceMode = InterfaceMode(rawValue: defaults.string(forKey: Keys.interfaceMode) ?? "") ?? fallback.interfaceMode
         customItemWidth = defaults.double(forKey: Keys.customItemWidth)
 
@@ -140,7 +121,6 @@ struct AppSettings {
         defaults.set(updateInterval, forKey: Keys.updateInterval)
         defaults.set(displayStyle.rawValue, forKey: Keys.displayStyle)
         defaults.set(unitMode.rawValue, forKey: Keys.unitMode)
-        defaults.set(scaleMode.rawValue, forKey: Keys.scaleMode)
         defaults.set(interfaceMode.rawValue, forKey: Keys.interfaceMode)
         defaults.set(customItemWidth, forKey: Keys.customItemWidth)
         defaults.set(fontSize, forKey: Keys.fontSize)
@@ -154,7 +134,6 @@ struct AppSettings {
         static let updateInterval = "updateInterval"
         static let displayStyle = "displayStyle"
         static let unitMode = "unitMode"
-        static let scaleMode = "scaleMode"
         static let interfaceMode = "interfaceMode"
         static let customItemWidth = "customItemWidth"
         static let fontSize = "fontSize"
@@ -163,7 +142,6 @@ struct AppSettings {
             updateInterval,
             displayStyle,
             unitMode,
-            scaleMode,
             interfaceMode,
             customItemWidth,
             fontSize
@@ -388,8 +366,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func calculatedAutoWidth() -> Double {
         guard statusItem.button != nil else { return 125.0 }
 
-        let sampleDown = "88 KiB/s"
-        let sampleUp = "88 KiB/s"
+        let sampleDown = "88 KB/s"
+        let sampleUp = "88 KB/s"
         let sampleTitle: String
 
         switch settings.displayStyle {
@@ -590,16 +568,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
 
-        menu.addItem(NSMenuItem.separator())
-
-        for scaleMode in ScaleMode.allCases {
-            let item = NSMenuItem(title: scaleMode.title, action: #selector(setScaleMode(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = scaleMode.rawValue
-            item.state = settings.scaleMode == scaleMode ? .on : .off
-            menu.addItem(item)
-        }
-
         return menu
     }
 
@@ -695,17 +663,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusItem()
     }
 
-    @objc private func setScaleMode(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
-              let scaleMode = ScaleMode(rawValue: rawValue) else {
-            return
-        }
-
-        settings.scaleMode = scaleMode
-        saveSettings()
-        updateStatusItem()
-    }
-
     @objc private func setInterfaceMode(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
               let interfaceMode = InterfaceMode(rawValue: rawValue) else {
@@ -786,7 +743,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func format(_ bytesPerSecond: Double) -> String {
         let multiplier = settings.unitMode == .bits ? 8.0 : 1.0
-        let base = settings.scaleMode == .binary ? 1024.0 : 1000.0
+        let base = 1000.0
         let units = unitsForCurrentSettings()
 
         var value = (bytesPerSecond * multiplier) / base
@@ -823,14 +780,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func unitsForCurrentSettings() -> [String] {
-        switch (settings.unitMode, settings.scaleMode) {
-        case (.bytes, .binary):
-            return ["KiB/s", "MiB/s", "GiB/s", "TiB/s"]
-        case (.bytes, .decimal):
+        switch settings.unitMode {
+        case .bytes:
             return ["KB/s", "MB/s", "GB/s", "TB/s"]
-        case (.bits, .binary):
-            return ["Kib/s", "Mib/s", "Gib/s", "Tib/s"]
-        case (.bits, .decimal):
+        case .bits:
             return ["Kb/s", "Mb/s", "Gb/s", "Tb/s"]
         }
     }
