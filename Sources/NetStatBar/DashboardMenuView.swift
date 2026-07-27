@@ -1,5 +1,6 @@
 import AppKit
 import NetStatCore
+import QuartzCore
 
 @MainActor
 final class DashboardMenuView: NSView {
@@ -184,22 +185,18 @@ final class DashboardMenuView: NSView {
         let preferencesButton = actionButton(
             title: "Preferences",
             action: #selector(openPreferences),
-            frame: NSRect(x: 16, y: 308, width: 276, height: 27)
+            frame: NSRect(x: 8, y: 308, width: 292, height: 27),
+            showsChevron: true
         )
         addSubview(preferencesButton)
-        addSubview(makeLabel(
-            "›",
-            frame: NSRect(x: 278, y: 310, width: 14, height: 19),
-            font: .systemFont(ofSize: 18, weight: .regular),
-            color: .labelColor
-        ))
 
         addSubview(MenuSeparatorView(frame: NSRect(x: 16, y: 338, width: 276, height: 1)))
         addSubview(actionButton(
             title: "Quit NetStatBar",
             action: #selector(quitApplication),
-            frame: NSRect(x: 16, y: 341, width: 276, height: 25),
-            color: .systemRed
+            frame: NSRect(x: 8, y: 341, width: 292, height: 25),
+            color: .systemRed,
+            role: .destructive
         ))
 
         setProcessRows(message: "Open menu to measure")
@@ -260,14 +257,26 @@ final class DashboardMenuView: NSView {
         title: String,
         action: Selector,
         frame: NSRect,
-        color: NSColor = .labelColor
+        color: NSColor = .labelColor,
+        role: DashboardActionButton.Role = .standard,
+        showsChevron: Bool = false
     ) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
+        let button = DashboardActionButton(title: title, target: self, action: action)
         button.frame = frame
+        button.role = role
         button.isBordered = false
         button.font = .systemFont(ofSize: 12)
         button.alignment = .left
         button.contentTintColor = color
+        if showsChevron {
+            button.image = NSImage(
+                systemSymbolName: "chevron.right",
+                accessibilityDescription: "Open Preferences"
+            )
+            button.imagePosition = .imageTrailing
+            button.imageHugsTitle = false
+            button.imageScaling = .scaleProportionallyDown
+        }
         button.attributedTitle = NSAttributedString(
             string: title,
             attributes: [
@@ -306,6 +315,128 @@ final class DashboardMenuView: NSView {
     private func formattedRate(_ bytesPerSecond: Double, unitMode: UnitMode) -> String {
         RateFormatter.string(fromBytesPerSecond: bytesPerSecond, unitMode: unitMode)
             .trimmingCharacters(in: .whitespaces)
+    }
+}
+
+@MainActor
+final class DashboardActionButton: NSButton {
+    static let horizontalContentInset: CGFloat = 8
+
+    enum Role {
+        case standard
+        case destructive
+    }
+
+    var role = Role.standard {
+        didSet {
+            updateBackground(animated: false)
+        }
+    }
+
+    private(set) var isHovered = false
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureLayer()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configureLayer()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        cell?.draw(
+            withFrame: bounds.insetBy(
+                dx: Self.horizontalContentInset,
+                dy: 0
+            ),
+            in: self
+        )
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        setHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setHovered(false)
+    }
+
+    override func highlight(_ flag: Bool) {
+        super.highlight(flag)
+        updateBackground(animated: true)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBackground(animated: false)
+    }
+
+    func setHovered(_ hovered: Bool, animated: Bool = true) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
+        updateBackground(animated: animated)
+    }
+
+    private func configureLayer() {
+        wantsLayer = true
+        layer?.cornerRadius = 5
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        layer?.isOpaque = false
+        updateBackground(animated: false)
+    }
+
+    private func updateBackground(animated: Bool) {
+        guard let layer else { return }
+
+        let targetColor = backgroundColor.cgColor
+        if animated {
+            let transition = CABasicAnimation(keyPath: "backgroundColor")
+            transition.fromValue = layer.presentation()?.backgroundColor ?? layer.backgroundColor
+            transition.toValue = targetColor
+            transition.duration = 0.12
+            transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(transition, forKey: "dashboardButtonBackground")
+        }
+        layer.backgroundColor = targetColor
+    }
+
+    private var backgroundColor: NSColor {
+        guard isHovered || isHighlighted else { return .clear }
+
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        switch role {
+        case .standard:
+            let alpha = isHighlighted
+                ? (isDark ? 0.18 : 0.11)
+                : (isDark ? 0.12 : 0.07)
+            return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(alpha)
+        case .destructive:
+            let alpha = isHighlighted
+                ? (isDark ? 0.30 : 0.18)
+                : (isDark ? 0.22 : 0.12)
+            return NSColor.systemRed.withAlphaComponent(alpha)
+        }
     }
 }
 

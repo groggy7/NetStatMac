@@ -116,7 +116,17 @@ final class AppBehaviorTests: XCTestCase {
                 .compactMap { $0 as? NSButton }
                 .first { $0.title == "Preferences" }
         )
-        XCTAssertEqual(button.frame.minX, 16)
+        XCTAssertEqual(button.frame.minX, 8)
+        XCTAssertEqual(
+            button.frame.minX + DashboardActionButton.horizontalContentInset,
+            16
+        )
+        XCTAssertEqual(
+            dashboard.bounds.maxX - button.frame.maxX,
+            8
+        )
+        XCTAssertEqual(button.imagePosition, .imageTrailing)
+        XCTAssertNotNil(button.image)
         button.performClick(nil)
 
         XCTAssertTrue(invoked)
@@ -138,6 +148,35 @@ final class AppBehaviorTests: XCTestCase {
     }
 
     @MainActor
+    func testDashboardActionButtonsUseAdaptiveHoverStates() throws {
+        let dashboard = DashboardMenuView()
+        dashboard.appearance = NSAppearance(named: .darkAqua)
+        dashboard.viewDidChangeEffectiveAppearance()
+
+        let buttons = dashboard.subviews.compactMap { $0 as? DashboardActionButton }
+        let preferences = try XCTUnwrap(buttons.first { $0.title == "Preferences" })
+        let quit = try XCTUnwrap(buttons.first { $0.title == "Quit NetStatBar" })
+
+        preferences.setHovered(true, animated: false)
+        XCTAssertTrue(preferences.isHovered)
+        let preferencesColor = try layerBackgroundColor(of: preferences)
+        XCTAssertGreaterThan(preferencesColor.alphaComponent, 0)
+
+        preferences.setHovered(false, animated: false)
+        XCTAssertFalse(preferences.isHovered)
+        XCTAssertEqual(
+            try layerBackgroundColor(of: preferences).alphaComponent,
+            0,
+            accuracy: 0.001
+        )
+
+        quit.setHovered(true, animated: false)
+        let quitColor = try layerBackgroundColor(of: quit)
+        XCTAssertGreaterThan(quitColor.redComponent, quitColor.greenComponent)
+        XCTAssertGreaterThan(quitColor.alphaComponent, preferencesColor.alphaComponent)
+    }
+
+    @MainActor
     private func renderedCenterColor(of view: NSView) throws -> NSColor {
         let representation = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: representation)
@@ -147,6 +186,12 @@ final class AppBehaviorTests: XCTestCase {
                 y: representation.pixelsHigh / 2
             )?.usingColorSpace(.sRGB)
         )
+    }
+
+    @MainActor
+    private func layerBackgroundColor(of view: NSView) throws -> NSColor {
+        let color = try XCTUnwrap(view.layer?.backgroundColor)
+        return try XCTUnwrap(NSColor(cgColor: color)?.usingColorSpace(.sRGB))
     }
 
 }
