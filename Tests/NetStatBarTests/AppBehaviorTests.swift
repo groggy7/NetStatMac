@@ -36,11 +36,33 @@ final class AppBehaviorTests: XCTestCase {
         defaults.set(1_000, forKey: "customItemWidth")
         defaults.set(-5, forKey: "fontSize")
         defaults.set("ultraviolet", forKey: "appearance")
+        defaults.set("everything", forKey: "processRateDisplay")
 
         let settings = AppSettings(defaults: defaults)
         XCTAssertEqual(settings.customItemWidth, AppSettings.defaults.customItemWidth)
         XCTAssertEqual(settings.fontSize, AppSettings.defaults.fontSize)
         XCTAssertEqual(settings.appearance, .system)
+        XCTAssertEqual(settings.processRateDisplay, .directional)
+    }
+
+    func testProcessRateDisplayPersistsAndDefaultsToDirectional() throws {
+        let suiteName = "NetStatBarTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertEqual(
+            AppSettings(defaults: defaults).processRateDisplay,
+            .directional
+        )
+
+        var settings = AppSettings(defaults: defaults)
+        settings.processRateDisplay = .combined
+        settings.save(to: defaults)
+
+        XCTAssertEqual(
+            AppSettings(defaults: defaults).processRateDisplay,
+            .combined
+        )
     }
 
     @MainActor
@@ -177,6 +199,48 @@ final class AppBehaviorTests: XCTestCase {
     }
 
     @MainActor
+    func testDashboardProcessRatesSwitchBetweenDirectionalAndCombinedLayouts() throws {
+        let dashboard = DashboardMenuView()
+        let activity = ProcessActivity(
+            name: "Google Chrome",
+            downloadedBytesPerSecond: 800_000,
+            uploadedBytesPerSecond: 200_000
+        )
+
+        dashboard.update(
+            processes: [activity],
+            unitMode: .bytes,
+            rateDisplay: .directional
+        )
+
+        let download = try processRateLabel(
+            in: dashboard,
+            identifier: "processDownloadRate0"
+        )
+        let upload = try processRateLabel(
+            in: dashboard,
+            identifier: "processUploadRate0"
+        )
+        XCTAssertEqual(download.stringValue, "↓ 0.8 MB/s")
+        XCTAssertEqual(upload.stringValue, "↑ 0.2 MB/s")
+        XCTAssertFalse(download.isHidden)
+        XCTAssertLessThan(download.frame.minX, upload.frame.minX)
+        XCTAssertEqual(download.frame.maxX, upload.frame.minX)
+        XCTAssertEqual(download.textColor, .systemBlue)
+        XCTAssertEqual(upload.textColor, .systemGreen)
+
+        dashboard.update(
+            processes: [activity],
+            unitMode: .bytes,
+            rateDisplay: .combined
+        )
+
+        XCTAssertTrue(download.isHidden)
+        XCTAssertEqual(upload.stringValue, "1 MB/s")
+        XCTAssertEqual(upload.textColor, .secondaryLabelColor)
+    }
+
+    @MainActor
     private func renderedCenterColor(of view: NSView) throws -> NSColor {
         let representation = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: representation)
@@ -192,6 +256,18 @@ final class AppBehaviorTests: XCTestCase {
     private func layerBackgroundColor(of view: NSView) throws -> NSColor {
         let color = try XCTUnwrap(view.layer?.backgroundColor)
         return try XCTUnwrap(NSColor(cgColor: color)?.usingColorSpace(.sRGB))
+    }
+
+    @MainActor
+    private func processRateLabel(
+        in dashboard: DashboardMenuView,
+        identifier: String
+    ) throws -> NSTextField {
+        try XCTUnwrap(
+            dashboard.subviews
+                .compactMap { $0 as? NSTextField }
+                .first { $0.identifier?.rawValue == identifier }
+        )
     }
 
 }

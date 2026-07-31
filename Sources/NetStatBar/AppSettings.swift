@@ -41,6 +41,20 @@ enum AppAppearance: String, CaseIterable {
     }
 }
 
+enum ProcessRateDisplay: String, CaseIterable {
+    case directional
+    case combined
+
+    var title: String {
+        switch self {
+        case .directional:
+            return "Download & Upload"
+        case .combined:
+            return "Combined Total"
+        }
+    }
+}
+
 struct AppSettings {
     static let updateIntervals: [TimeInterval] = [0.5, 1, 2, 5]
     static let itemWidthRange = 60.0...250.0
@@ -51,6 +65,7 @@ struct AppSettings {
     var unitMode: UnitMode
     var interfaceMode: InterfaceMode
     var appearance: AppAppearance
+    var processRateDisplay: ProcessRateDisplay
     var customItemWidth: Double
     var fontSize: Double
 
@@ -60,6 +75,7 @@ struct AppSettings {
         unitMode: .bytes,
         interfaceMode: .automatic,
         appearance: .system,
+        processRateDisplay: .directional,
         customItemWidth: 0,
         fontSize: 12
     )
@@ -70,6 +86,7 @@ struct AppSettings {
         unitMode: UnitMode,
         interfaceMode: InterfaceMode,
         appearance: AppAppearance,
+        processRateDisplay: ProcessRateDisplay,
         customItemWidth: Double,
         fontSize: Double
     ) {
@@ -78,6 +95,7 @@ struct AppSettings {
         self.unitMode = unitMode
         self.interfaceMode = interfaceMode
         self.appearance = appearance
+        self.processRateDisplay = processRateDisplay
         self.customItemWidth = customItemWidth
         self.fontSize = fontSize
     }
@@ -100,6 +118,9 @@ struct AppSettings {
             ?? fallback.interfaceMode
         appearance = AppAppearance(rawValue: defaults.string(forKey: Keys.appearance) ?? "")
             ?? fallback.appearance
+        processRateDisplay = ProcessRateDisplay(
+            rawValue: defaults.string(forKey: Keys.processRateDisplay) ?? ""
+        ) ?? fallback.processRateDisplay
 
         let storedWidth = defaults.double(forKey: Keys.customItemWidth)
         if storedWidth.isFinite && (storedWidth == 0 || Self.itemWidthRange.contains(storedWidth)) {
@@ -122,6 +143,7 @@ struct AppSettings {
         defaults.set(unitMode.rawValue, forKey: Keys.unitMode)
         defaults.set(interfaceMode.rawValue, forKey: Keys.interfaceMode)
         defaults.set(appearance.rawValue, forKey: Keys.appearance)
+        defaults.set(processRateDisplay.rawValue, forKey: Keys.processRateDisplay)
         defaults.set(customItemWidth, forKey: Keys.customItemWidth)
         defaults.set(fontSize, forKey: Keys.fontSize)
     }
@@ -136,6 +158,7 @@ struct AppSettings {
         static let unitMode = "unitMode"
         static let interfaceMode = "interfaceMode"
         static let appearance = "appearance"
+        static let processRateDisplay = "processRateDisplay"
         static let customItemWidth = "customItemWidth"
         static let fontSize = "fontSize"
 
@@ -145,6 +168,7 @@ struct AppSettings {
             unitMode,
             interfaceMode,
             appearance,
+            processRateDisplay,
             customItemWidth,
             fontSize
         ]

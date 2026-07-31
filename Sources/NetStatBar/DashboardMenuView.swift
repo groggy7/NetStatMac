@@ -12,7 +12,8 @@ final class DashboardMenuView: NSView {
     private let usageValueLabels = (0..<3).map { _ in NSTextField(labelWithString: "") }
     private let processIconViews = (0..<3).map { _ in NSImageView() }
     private let processNameLabels = (0..<3).map { _ in NSTextField(labelWithString: "") }
-    private let processRateLabels = (0..<3).map { _ in NSTextField(labelWithString: "") }
+    private let processDownloadRateLabels = (0..<3).map { _ in NSTextField(labelWithString: "") }
+    private let processUploadRateLabels = (0..<3).map { _ in NSTextField(labelWithString: "") }
     var onPreferences: ((DashboardMenuView) -> Void)?
     var onQuit: (() -> Void)?
 
@@ -81,11 +82,18 @@ final class DashboardMenuView: NSView {
         }
     }
 
-    func showProcessMeasurementPending() {
+    func showProcessMeasurementPending(rateDisplay: ProcessRateDisplay) {
+        applyProcessRateDisplayLayout(rateDisplay)
         setProcessRows(message: "Measuring…")
     }
 
-    func update(processes: [ProcessActivity], unitMode: UnitMode) {
+    func update(
+        processes: [ProcessActivity],
+        unitMode: UnitMode,
+        rateDisplay: ProcessRateDisplay
+    ) {
+        applyProcessRateDisplayLayout(rateDisplay)
+
         guard !processes.isEmpty else {
             setProcessRows(message: "No active traffic")
             return
@@ -102,10 +110,26 @@ final class DashboardMenuView: NSView {
                 ?? NSImage(systemSymbolName: "app", accessibilityDescription: process.name)
             processNameLabels[index].stringValue = process.name
             processNameLabels[index].toolTip = process.name
-            processRateLabels[index].stringValue = formattedRate(
-                Double(process.totalBytesPerSecond),
-                unitMode: unitMode
-            )
+
+            switch rateDisplay {
+            case .directional:
+                let downloadRate = formattedRate(
+                    Double(process.downloadedBytesPerSecond),
+                    unitMode: unitMode
+                )
+                let uploadRate = formattedRate(
+                    Double(process.uploadedBytesPerSecond),
+                    unitMode: unitMode
+                )
+                processDownloadRateLabels[index].stringValue = "↓ \(downloadRate)"
+                processUploadRateLabels[index].stringValue = "↑ \(uploadRate)"
+            case .combined:
+                processDownloadRateLabels[index].stringValue = ""
+                processUploadRateLabels[index].stringValue = formattedRate(
+                    Double(process.totalBytesPerSecond),
+                    unitMode: unitMode
+                )
+            }
         }
     }
 
@@ -166,18 +190,25 @@ final class DashboardMenuView: NSView {
             addSubview(iconView)
 
             let nameLabel = processNameLabels[index]
-            nameLabel.frame = NSRect(x: 46, y: y + 2, width: 178, height: 18)
+            nameLabel.frame = combinedProcessNameFrame(y: y)
             nameLabel.font = .systemFont(ofSize: 11.5)
             nameLabel.textColor = .labelColor
             nameLabel.lineBreakMode = .byTruncatingTail
             addSubview(nameLabel)
 
-            let rateLabel = processRateLabels[index]
-            rateLabel.frame = NSRect(x: 226, y: y + 2, width: 66, height: 18)
-            rateLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-            rateLabel.textColor = .secondaryLabelColor
-            rateLabel.alignment = .right
-            addSubview(rateLabel)
+            let downloadRateLabel = processDownloadRateLabels[index]
+            downloadRateLabel.identifier = NSUserInterfaceItemIdentifier(
+                "processDownloadRate\(index)"
+            )
+            configureProcessRateLabel(downloadRateLabel, color: .systemBlue)
+            addSubview(downloadRateLabel)
+
+            let uploadRateLabel = processUploadRateLabels[index]
+            uploadRateLabel.identifier = NSUserInterfaceItemIdentifier(
+                "processUploadRate\(index)"
+            )
+            configureProcessRateLabel(uploadRateLabel, color: .systemGreen)
+            addSubview(uploadRateLabel)
         }
 
         addSubview(MenuSeparatorView(frame: NSRect(x: 16, y: 303, width: 276, height: 1)))
@@ -229,6 +260,56 @@ final class DashboardMenuView: NSView {
         label.textColor = color
         label.alignment = .right
         label.lineBreakMode = .byClipping
+    }
+
+    private func configureProcessRateLabel(_ label: NSTextField, color: NSColor) {
+        label.font = .monospacedDigitSystemFont(ofSize: 9.5, weight: .regular)
+        label.textColor = color
+        label.alignment = .right
+        label.lineBreakMode = .byClipping
+    }
+
+    private func applyProcessRateDisplayLayout(_ rateDisplay: ProcessRateDisplay) {
+        for index in processNameLabels.indices {
+            let y = 215.0 + Double(index) * 29
+
+            switch rateDisplay {
+            case .directional:
+                processNameLabels[index].frame = directionalProcessNameFrame(y: y)
+                processDownloadRateLabels[index].frame = NSRect(
+                    x: 148,
+                    y: y + 2,
+                    width: 73,
+                    height: 18
+                )
+                processDownloadRateLabels[index].isHidden = false
+                processUploadRateLabels[index].frame = NSRect(
+                    x: 221,
+                    y: y + 2,
+                    width: 67,
+                    height: 18
+                )
+                processUploadRateLabels[index].textColor = .systemGreen
+            case .combined:
+                processNameLabels[index].frame = combinedProcessNameFrame(y: y)
+                processDownloadRateLabels[index].isHidden = true
+                processUploadRateLabels[index].frame = NSRect(
+                    x: 226,
+                    y: y + 2,
+                    width: 66,
+                    height: 18
+                )
+                processUploadRateLabels[index].textColor = .secondaryLabelColor
+            }
+        }
+    }
+
+    private func directionalProcessNameFrame(y: Double) -> NSRect {
+        NSRect(x: 46, y: y + 2, width: 97, height: 18)
+    }
+
+    private func combinedProcessNameFrame(y: Double) -> NSRect {
+        NSRect(x: 46, y: y + 2, width: 178, height: 18)
     }
 
     private func sectionLabel(_ text: String, y: Double) -> NSTextField {
@@ -309,7 +390,8 @@ final class DashboardMenuView: NSView {
         processIconViews[index].image = nil
         processNameLabels[index].stringValue = ""
         processNameLabels[index].toolTip = nil
-        processRateLabels[index].stringValue = ""
+        processDownloadRateLabels[index].stringValue = ""
+        processUploadRateLabels[index].stringValue = ""
     }
 
     private func formattedRate(_ bytesPerSecond: Double, unitMode: UnitMode) -> String {

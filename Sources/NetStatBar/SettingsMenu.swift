@@ -57,10 +57,13 @@ extension AppDelegate {
         if hasProcessActivitySnapshot {
             dashboardView.update(
                 processes: latestProcessActivities,
-                unitMode: settings.unitMode
+                unitMode: settings.unitMode,
+                rateDisplay: settings.processRateDisplay
             )
         } else {
-            dashboardView.showProcessMeasurementPending()
+            dashboardView.showProcessMeasurementPending(
+                rateDisplay: settings.processRateDisplay
+            )
         }
         dashboardPanel.orderFrontRegardless()
         installDashboardEventMonitors()
@@ -118,7 +121,8 @@ extension AppDelegate {
                 hasProcessActivitySnapshot = true
                 dashboard.update(
                     processes: activities,
-                    unitMode: settings.unitMode
+                    unitMode: settings.unitMode,
+                    rateDisplay: settings.processRateDisplay
                 )
 
                 do {
@@ -203,6 +207,10 @@ extension AppDelegate {
         menu.addItem(parentMenuItem(title: "Item Width", submenu: itemWidthMenu()))
         menu.addItem(parentMenuItem(title: "Font Size", submenu: fontSizeMenu()))
         menu.addItem(parentMenuItem(title: "Units", submenu: unitsMenu()))
+        menu.addItem(parentMenuItem(
+            title: "Process Rate Display",
+            submenu: processRateDisplayMenu()
+        ))
         menu.addItem(parentMenuItem(title: "Interfaces", submenu: interfaceMenu()))
 
         menu.addItem(NSMenuItem.separator())
@@ -395,6 +403,24 @@ extension AppDelegate {
         return menu
     }
 
+    private func processRateDisplayMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        for display in ProcessRateDisplay.allCases {
+            let item = NSMenuItem(
+                title: display.title,
+                action: #selector(setProcessRateDisplay(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = display.rawValue
+            item.state = settings.processRateDisplay == display ? .on : .off
+            menu.addItem(item)
+        }
+
+        return menu
+    }
+
     @objc private func setItemWidthAuto() {
         settings.customItemWidth = 0
         saveSettings()
@@ -447,6 +473,19 @@ extension AppDelegate {
         settings.unitMode = unitMode
         saveSettings()
         updateStatusItem()
+        updateDashboard()
+        refreshDashboardProcessRows()
+    }
+
+    @objc private func setProcessRateDisplay(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let display = ProcessRateDisplay(rawValue: rawValue) else {
+            return
+        }
+
+        settings.processRateDisplay = display
+        saveSettings()
+        refreshDashboardProcessRows()
     }
 
     @objc private func setAppearance(_ sender: NSMenuItem) {
@@ -479,10 +518,27 @@ extension AppDelegate {
         updateFont()
         updateStatusItemWidth()
         startSampling()
+        refreshDashboardProcessRows()
     }
 
     @objc private func resetUsageStatistics() {
         usageTracker.reset()
         updateDashboard()
+    }
+
+    private func refreshDashboardProcessRows() {
+        guard let dashboardView else { return }
+
+        if hasProcessActivitySnapshot {
+            dashboardView.update(
+                processes: latestProcessActivities,
+                unitMode: settings.unitMode,
+                rateDisplay: settings.processRateDisplay
+            )
+        } else {
+            dashboardView.showProcessMeasurementPending(
+                rateDisplay: settings.processRateDisplay
+            )
+        }
     }
 }
