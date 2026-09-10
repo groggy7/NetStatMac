@@ -2,12 +2,16 @@
 
 NetStatBar is a small native macOS menu bar app that shows the current download and upload rate. It is built with Swift and AppKit, has no third-party dependencies, and runs without a Dock icon.
 
+<img width="376" height="31" alt="image" src="https://github.com/user-attachments/assets/9915a8d5-308f-4600-9d8b-d2d8f336d815" />
+
 ## Features
 
 Click the menu bar readout to configure:
 
 - **Compact dashboard:** current download/upload rates, a 60-second activity graph, usage tracked today, this month, and this year, plus the three applications currently using the most bandwidth.
 - **Appearance:** follow the system appearance or explicitly use light or dark mode.
+<img width="298" height="367" alt="image" src="https://github.com/user-attachments/assets/499e48c2-466d-45d5-8952-2a430a937240" />
+<img width="299" height="363" alt="image" src="https://github.com/user-attachments/assets/24d1b931-deb1-4b53-a278-dbc0580d128b" />
 
 - **Update interval:** 0.5, 1, 2, or 5 seconds.
 - **Display style:** arrows, labels, compact, download only, or upload only.
